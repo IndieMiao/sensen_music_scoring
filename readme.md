@@ -1,151 +1,151 @@
-# SingScoring SDK — Implementation Plan
+# SingScoring SDK
 
-Cross-platform (Android + iOS) SDK for real-time singing evaluation. Scores a user's vocal performance against a reference MIDI melody and returns **10–99** (pass ≥ 60).
+Cross-platform SDK for real-time singing evaluation. A user sings along to a
+reference track; the SDK compares their mic input against a reference MIDI
+melody and returns an integer score in **[10, 99]** (pass ≥ 60).
+
+- **Android:** `singscoring.aar` (arm64-v8a, armeabi-v7a, x86_64) + Kotlin API.
+- **iOS:** `SingScoring.xcframework` (device + simulator) + Obj-C/Swift API.
+- **Demo APK:** plays the backing track via ExoPlayer, captures mic, shows score.
+
+No network needed — songs are self-contained zip bundles.
+
+Current version: **0.2.0**. See [CHANGELOG.md](CHANGELOG.md) for what shipped.
+ABI reference: [docs/ABI.md](docs/ABI.md).
 
 ---
 
-## 1. Deliverables
+## Quickstart
 
-- **Android:** `singscoring.aar` (arm64-v8a, armeabi-v7a, x86_64) with a Kotlin/Java API over a JNI layer.
-- **iOS:** `SingScoring.xcframework` (device arm64 + sim arm64/x86_64) with a Swift-friendly Obj-C++ API.
-- **Android demo APK** — loads bundled sample zips, plays backing track, records mic, displays score. No network required.
+### Android
 
----
+```kotlin
+// 1. Point at a .zip on disk (cache dir, downloaded file, asset-extract, etc.)
+val session = SingScoringSession.open(zipPath)
 
-## 2. Repo layout
+// 2. From an AudioRecord(ENCODING_PCM_FLOAT) callback:
+session.feedPcm(floatBuffer, sampleRate = 44100, count = framesRead)
 
+// 3. When the user taps "stop":
+val score = session.finalizeScore()   // 10..99
+session.close()
 ```
-/core                    # Portable C++17 scoring engine (no platform deps)
-/bindings
-  /android               # JNI + Kotlin API → .aar
-  /ios                   # Obj-C++ shim + Swift API → .xcframework
-/demo-android            # Sample Android app consuming the .aar
-/third_party             # Pinned deps (miniz, KissFFT, minimp3)
-/tests                   # Core unit tests + golden audio fixtures
-/SongHighlightSamples    # Sample song zips used for dev + demo
+
+See [`demo-android/`](demo-android/) for an end-to-end example.
+
+### iOS (Swift)
+
+```swift
+guard let session = SingScoringSession(zipPath: zipURL.path) else {
+    fatalError("failed to open song zip")
+}
+
+// From an AVAudioEngine input tap:
+buffer.floatChannelData?[0].withMemoryRebound(to: Float.self, capacity: n) { ptr in
+    session.feedPCM(ptr, count: n, sampleRate: 44100)
+}
+
+let score = session.finalizeScore()
 ```
 
-Build: **CMake** is the source of truth; Gradle (NDK) and Xcode delegate to it.
+Build: `./scripts/build-ios-xcframework.sh` (macOS only). Full guide:
+[`bindings/ios/README.md`](bindings/ios/README.md).
 
 ---
 
-## 3. Input format
+## Song zip layout
 
-The SDK consumes a zip per song. Confirmed from the samples in [SongHighlightSamples/](SongHighlightSamples/):
+Each song zip contains four files named after the song code:
 
 | File | Role |
 |---|---|
-| `[songCode]_chorus.mp3` | Backing track played to the user. |
-| `[songCode]_chorus.lrc` | Lyrics for **display only** (not used for scoring). |
-| `[songCode]_chorus.mid` | Reference vocal melody. Single monophonic track. Used for scoring. |
-| `[songCode]_chorus.json` | `{songCode, name, singer, style, rhythm, duration}`. `duration` is the MP3 length; **not** the scoring window. |
+| `[code]_chorus.mp3` | Backing track played while the user sings. |
+| `[code]_chorus.mid` | Reference monophonic vocal melody. Sole scoring input. |
+| `[code]_chorus.lrc` | Lyrics — **display only**, never scored. |
+| `[code]_chorus.json` | `{songCode, name, singer, rhythm, duration}`. `duration` is the MP3 length, not the scoring horizon. |
 
-### Observations from the 4 samples
-
-| Song | JSON duration | MIDI span | Notes | Avg note | Silent gaps | MIDI pitch range |
-|---|---|---|---|---|---|---|
-| 友情岁月 | 53s | 39s | 142 | 155 ms | 43% | 49–66 |
-| 安全感 | 41s | 24.5s | 63 | 368 ms | 4% | 54–67 |
-| 离不开你 | 39s | 37.5s | 112 | 232 ms | 37% | 53–75 |
-| 因为爱情 | 19s | 12.5s | 31 | 373 ms | 6% | 48–69 |
-
-Implications:
-
-- MIDI always ends before the MP3 does (intro/outro are instrumental). Scoring horizon = last MIDI note end, not JSON `duration`.
-- All samples are single-track monophonic — no vocal-track-selection heuristic needed.
-- All pitches live in MIDI 48–75 (~130–620 Hz). Pitch detector search range constrained accordingly.
-- Silent gaps can be large (up to 43%). Scoring must iterate over notes, not wall-clock frames.
+The MIDI always ends before the MP3 — the MP3 has instrumental intro/outro.
+Scoring horizon is the last MIDI note's end time, not the MP3 length.
 
 ---
 
-## 4. Scoring algorithm
+## Scoring design
 
-### Core loop
-For each reference note `N` in the MIDI:
+- **Per-note, not per-frame.** The scorer walks every reference MIDI note and
+  takes the median detected pitch over that note's time window. Silent
+  instrumental gaps are never penalized.
+- **Pitch detection:** YIN on 40ms windows, 10ms hop. Search range clamped
+  to 80–800 Hz (covers MIDI 40–84; observed range is 48–75).
+- **Per-note score curve:** semitone error → `[0.1, 1.0]`. 0.5-semitone
+  tolerance band (vibrato / pitch bend), linear decay to a 3-semitone floor.
+- **Aggregate:** duration-weighted mean across notes, mapped `[0, 1] → [10, 99]`.
+  Long held notes test real pitch control, so they weigh proportionally more.
 
-1. Collect detected pitch frames whose timestamps fall in `[N.start - ε, N.end + ε]` (ε = 30 ms onset tolerance).
-2. Compute three per-note sub-scores:
-   - **pitch_score** — `1 - clamp(median(|detected_midi − N.pitch|), 0, 1 semitone)`. Unvoiced frames count as 1 semitone error.
-   - **voicing_score** — fraction of frames inside the note window where pitch confidence ≥ threshold.
-   - **onset_score** — `1 - clamp(|first_voiced_frame − N.start| / 200ms, 0, 1)`.
-3. Per-note score = weighted combination (suggested: 0.6 pitch / 0.25 voicing / 0.15 onset).
-
-### Aggregation
-- Weight each note's score by `note.duration_ms` (long sustained notes test real pitch control; grace notes shouldn't dominate).
-- Map the resulting 0–1 weighted average to **10–99** via a calibration curve (tuned against fixtures, see §6).
-- **Time between notes is ignored.** The user is allowed to be silent during instrumental gaps.
-
-### Config flags
-- `octave_tolerant: bool = false` — if true, accept detected pitches that match `N.pitch ± 12 semitones` (lets a male user sing a female-key track without penalty). Off by default per spec.
-
-### Pitch detector
-- **YIN** on 40 ms windows, 10 ms hop at 44.1 kHz input.
-- Search range clamped to 80–800 Hz (covers MIDI 40–84, well wider than observed 48–75).
-- Output per frame: `{time_ms, f0_hz or NaN, confidence}`.
+The 10 floor means even an unanswered session returns a valid integer.
 
 ---
 
-## 5. Public C ABI
+## Build
 
-Narrow surface shared by both platform wrappers:
+Shell is MSYS bash on Windows. None of the toolchain is on system PATH by
+default — use `scripts/env.sh` to prepend the Android SDK / NDK / JDK:
 
-```c
-ss_session* ss_open(const char* zip_path);
-void        ss_feed_pcm(ss_session*, const float* samples, int n, int sample_rate);
-int         ss_finalize_score(ss_session*);   // 10..99
-void        ss_close(ss_session*);
-const char* ss_version(void);
+```bash
+. scripts/env.sh
+export JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"
+
+./gradlew :singscoring:assembleDebug        # AAR → bindings/android/build/outputs/aar/
+./gradlew :demo-android:assembleDebug       # Demo APK
+./gradlew clean
 ```
 
-Platform wrappers never touch scoring internals — they marshal PCM in and a score out.
+Desktop core + tests (Linux / macOS, requires cmake + C++17 toolchain; not
+buildable natively on Windows yet):
+
+```bash
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+GitHub Actions runs desktop tests + the Android AAR on every push (see
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
 ---
 
-## 6. Implementation phases
+## Repo layout
 
-### Phase 0 — Foundations (~1 week)
-Repo scaffolding, CMake skeleton, CI matrix (Linux core tests, macOS xcframework build, Ubuntu+NDK aar build), pinned third_party deps.
-
-### Phase 1 — Core engine in C++ (~2–3 weeks)
-1. Zip + asset loader (miniz).
-2. MIDI parser (format 0 and 1, single melody track, tempo-map aware).
-3. LRC parser (line-based, display-only output).
-4. MP3 decoder for fixture tests (minimp3).
-5. YIN pitch detector.
-6. Per-note scorer + duration-weighted aggregator + score curve.
-7. **Calibration pass** against fixtures in `SongHighlightSamples/`:
-   - Loopback-perfect singing → ~95.
-   - Semitone-flat throughout → ~55–65 (right at pass line).
-   - Silent input → ~10.
-
-   Tune the 0–1 → 10–99 curve until these land where expected. No curve tweaking until all three fixtures are instrumented.
-
-### Phase 2 — Android binding + demo APK (~1–2 weeks)
-- JNI layer, Kotlin `SingScoringSession` wrapper, Gradle module producing `singscoring.aar`.
-- Demo app:
-  - Ships `SongHighlightSamples/*.zip` in `app/src/main/assets/`.
-  - Song picker (RecyclerView) reads assets at launch.
-  - ExoPlayer for chorus.mp3 + simple LrcView for lyrics.
-  - `AudioRecord` at 44.1 kHz mono float → `ss_feed_pcm`.
-  - On stop, display score + pass/fail.
-- Permissions: `RECORD_AUDIO`.
-
-### Phase 3 — iOS binding (~1 week, parallel with Phase 2)
-- Obj-C++ shim + Swift `SingScoringSession`.
-- Ship `SingScoring.xcframework`.
-- Minimal SwiftUI smoke-test target (not a deliverable, just a sanity check).
-
-### Phase 4 — Hardening (~1 week)
-- Per-frame latency budget: < 50 ms on a mid-tier Android device.
-- Document headphone requirement (backing-track bleed into the mic will hurt scores).
-- Semver, `ss_version()` embedded in binaries.
-- Integrator docs in this readme.
+```
+/core                    # Portable C++17 scoring engine (no platform deps)
+  /include/singscoring.h # Public C ABI — the sole platform/core boundary
+  /src/*.cpp             # MIDI / LRC / JSON / MP3 / zip / YIN / scorer / session
+/bindings
+  /android               # JNI + Kotlin SingScoringSession
+  /ios                   # Obj-C++ shim + xcframework target
+/demo-android            # Sample app consuming the AAR (live mic scoring)
+/third_party             # Vendored deps: miniz, minimp3
+/tests                   # GoogleTest suite — runs in CI
+/SongHighlightSamples    # Four fixture zips used for tests + demo content
+/scripts                 # env.sh (toolchain paths), build-ios-xcframework.sh
+```
 
 ---
 
-## 7. Open questions
+## Toolchain (pinned)
 
-1. Minimum Android API level and iOS version target?
-2. Is any of the scoring config (weights, thresholds, octave tolerance) expected to be tunable by the host app, or baked in?
-3. Is there a reference scoring curve from the product team (e.g., "an 85 means what"), or do we calibrate from scratch against the four samples?
-4. For the demo, should sample zips ship bundled in the APK (self-contained, larger) or be sideloaded to `/sdcard/SongHighlightSamples/` (smaller APK, easier to swap)? Default assumption: **bundled**.
+- JDK 21 (Android Studio bundled at `C:\Program Files\Android\Android Studio\jbr`)
+- Android NDK **27.3.13750724**
+- CMake 3.22+ (Linux CI / iOS) / 3.31.6 (Android Studio local)
+- Gradle 8.9 / AGP 8.6.0 / Kotlin 2.0.21
+- minSdk 24 / targetSdk 34 / compileSdk 34
+- iOS 13.0+ deployment target
+
+---
+
+## Fixture data caveats
+
+The four bundled songs in `SongHighlightSamples/` are both test fixtures and
+demo content. One of them (`7104926136466570.zip` — 离不开你) ships with a
+broken MIDI tempo header, so live scoring against it will be wrong until
+the data is regenerated. The integration test flags and skips the affected
+assertion for that song. The other three are fine.

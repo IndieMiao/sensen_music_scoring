@@ -1,5 +1,6 @@
 #include "singscoring.h"
+#include "singscoring_version.h"
 
 extern "C" const char* ss_version(void) {
-    return "0.1.0";
+    return SSC_VERSION_STRING;
 }

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Cross-platform SDK for real-time singing evaluation. Android (AAR) + iOS (xcframework) bindings wrap a portable C++17 scoring engine that compares a user's microphone input to a reference MIDI melody and returns an integer score in **[10, 99]** (pass ≥ 60).
 
-Status: **Phase 0** (scaffolding) is complete. The C++ core currently ships **stub scoring** — `ss_finalize_score` returns 10 regardless of input. Real DSP (MIDI parser, YIN pitch detector, per-note scorer) lands in Phase 1. See [readme.md](readme.md) for the phase plan.
+Status as of **0.2.0**: full pipeline shipping (MIDI parser + YIN pitch detector + per-note scorer + `[10, 99]` aggregate) on Android (live AAR + demo APK) and iOS (scaffolded Obj-C++ framework + xcframework build script). See [CHANGELOG.md](CHANGELOG.md) for per-release notes and [docs/ABI.md](docs/ABI.md) for the stability contract.
 
 ## Architecture
 
@@ -26,9 +26,9 @@ Both bindings (Android JNI and, eventually, iOS Obj-C++) talk to the core **only
 
 The Android AAR module lives at `bindings/android/` but is registered in Gradle as `:singscoring` (see `settings.gradle.kts`). Its `CMakeLists.txt` uses `add_subdirectory` to pull in `core/` — there is no second copy of the scoring code.
 
-### Scoring design invariants (relevant in Phase 1+)
+### Scoring design invariants
 
-Decisions already baked into the plan from inspecting `SongHighlightSamples/*.zip`:
+Decisions baked into the engine from inspecting `SongHighlightSamples/*.zip`:
 
 - **Score iterates over MIDI notes, not wall-clock time.** Silent instrumental gaps can be 40%+ of the chorus; a naive frame-by-frame comparator penalizes correct silence.
 - **`json.duration` is the MP3 length, not the scoring horizon.** Use `last_midi_note.end_ms` for scoring bounds.
@@ -86,6 +86,8 @@ If a test or build fails locally but CI passes (or vice versa), treat CI as auth
 ## Conventions worth knowing
 
 - **Commits never attribute Claude** — no `Co-Authored-By:` trailer, no "Generated with Claude Code" footer. Plain subject + body.
-- Samples in `SongHighlightSamples/*.zip` are both demo content (bundled into the APK via `sourceSets["main"].assets.srcDirs("../SongHighlightSamples")` in `demo-android/build.gradle.kts`) and scoring fixtures (Phase 1 calibration targets).
+- Samples in `SongHighlightSamples/*.zip` are both demo content (bundled into the APK via `sourceSets["main"].assets.srcDirs("../SongHighlightSamples")` in `demo-android/build.gradle.kts`) and scoring fixtures exercised by `tests/test_song_integration.cpp` and `tests/test_session_scoring.cpp`.
+- `7104926136466570.zip` has a broken MIDI tempo (74 BPM declared, ~120 BPM actual). The integration test allowlists this one song with a relaxed expectation; scoring against live input for it is known wrong.
+- Version bumps: edit `core/include/singscoring_version.h` + `bindings/ios/Info.plist.in` + `bindings/ios/CMakeLists.txt` (the `MACOSX_FRAMEWORK_SHORT_VERSION_STRING` line) + a CHANGELOG entry. Nothing else reads the version at runtime.
 - Only LF-normalization warnings are expected on `git add` (the project uses LF in source, Windows checks out CRLF — harmless).
 - The NDK's own `android.toolchain.cmake` emits `cmake_minimum_required < 3.10` deprecation warnings on CMake 3.31. These are from Google's files, not ours — ignore until a newer NDK ships.
