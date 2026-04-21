@@ -1,0 +1,19 @@
+# Text files: normalize LF in the repo; git can convert to CRLF on Windows checkout.
+*                text=auto
+
+# Shell scripts, gradlew, Unix-critical files: always LF, regardless of OS.
+*.sh             text eol=lf
+gradlew          text eol=lf
+scripts/*        text eol=lf
+*.yml            text eol=lf
+*.yaml           text eol=lf
+
+# Binaries: never convert.
+*.jar            binary
+*.zip            binary
+*.aar            binary
+*.apk            binary
+*.mp3            binary
+*.mid            binary
+*.framework      binary
+*.xcframework    binary

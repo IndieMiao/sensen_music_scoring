@@ -27,7 +27,9 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.31.6"
+            // No `version` — AGP picks the best CMake available. Locally that
+            // resolves to whatever's in Sdk/cmake/; on CI (no Sdk/cmake/)
+            // AGP falls back to the cmake package from sdkmanager.
         }
     }
 

@@ -55,7 +55,7 @@ export JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"
 ./gradlew :singscoring:externalNativeBuildDebug   # just the native CMake step
 ```
 
-Desktop (non-Android) core + GoogleTest — **not buildable on Windows yet** (no local C++ compiler). Skip until CI picks this up, or run from a Linux/macOS shell with `cmake` and a C++17 toolchain:
+Desktop (non-Android) core + GoogleTest — **not buildable on Windows yet** (no local C++ compiler). Runs automatically in CI on every push; to run by hand, use a Linux/macOS shell with `cmake` and a C++17 toolchain:
 
 ```bash
 cmake -S . -B build-desktop
@@ -63,6 +63,15 @@ cmake --build build-desktop
 ctest --test-dir build-desktop --output-on-failure
 ctest --test-dir build-desktop -R Session.open_null_path_returns_null --output-on-failure  # single test
 ```
+
+## CI
+
+`.github/workflows/ci.yml` runs two jobs on every push/PR to main:
+
+- `desktop-tests` — Ubuntu, CMake + Ninja, runs `ctest`. This is the only place the core C++ tests actually execute today.
+- `android-build` — Ubuntu + JDK 21 + NDK 27.3 via sdkmanager, builds the AAR, uploads it as a workflow artifact.
+
+If a test or build fails locally but CI passes (or vice versa), treat CI as authoritative for the core — it has a real C++ toolchain.
 
 ## Toolchain versions (pinned)
 
