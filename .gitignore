@@ -1,0 +1,31 @@
+# Build outputs
+build/
+out/
+cmake-build-*/
+.cxx/
+*.aar
+*.apk
+*.framework
+*.xcframework
+
+# IDE / editor / assistant
+.idea/
+*.iml
+.vscode/
+.gradle/
+.claude/
+local.properties
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Extracted samples (keep zips, drop extracted dirs)
+/SongHighlightSamples/extracted/
+
+# Gradle
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+
+# Third-party downloads (populated by CMake FetchContent)
+third_party/_deps/
