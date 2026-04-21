@@ -16,7 +16,7 @@ Pcm decode_mp3(const uint8_t* data, size_t size) {
 
     const uint8_t* p       = data;
     size_t         remain  = size;
-    mp3_sample_t   frame_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];  // float when MINIMP3_FLOAT_OUTPUT is set
+    mp3d_sample_t  frame_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];  // float when MINIMP3_FLOAT_OUTPUT is set
 
     while (remain > 0) {
         mp3dec_frame_info_t info{};
