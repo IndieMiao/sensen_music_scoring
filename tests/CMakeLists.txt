@@ -11,6 +11,20 @@ FetchContent_MakeAvailable(googletest)
 add_executable(singscoring_tests
     test_version.cpp
     test_session.cpp
+    test_midi_parser.cpp
+    test_lrc_parser.cpp
+    test_json_parser.cpp
+    test_zip_loader.cpp
+    test_song_integration.cpp
+)
+
+# Tests poke at internal types (Note, LrcLine, etc). Give them access to core/src/.
+target_include_directories(singscoring_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/src
+)
+
+target_compile_definitions(singscoring_tests PRIVATE
+    SSC_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/SongHighlightSamples"
 )
 
 target_link_libraries(singscoring_tests PRIVATE
