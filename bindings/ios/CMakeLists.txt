@@ -1,0 +1,35 @@
+# iOS framework target. Only configures when building for an Apple platform via
+# an iOS toolchain — otherwise returns early so desktop/Android builds ignore it.
+
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    return()
+endif()
+
+add_library(SingScoring SHARED
+    SSCSession.mm
+)
+
+target_include_directories(SingScoring
+    PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/SingScoring
+)
+
+target_link_libraries(SingScoring PRIVATE singscoring_core)
+
+# Build as a versioned framework bundle. The `-create-xcframework` step in the
+# driver script consumes these .framework outputs directly.
+set_target_properties(SingScoring PROPERTIES
+    FRAMEWORK TRUE
+    FRAMEWORK_VERSION A
+    MACOSX_FRAMEWORK_IDENTIFIER     com.sensen.singscoring
+    MACOSX_FRAMEWORK_BUNDLE_VERSION 1
+    MACOSX_FRAMEWORK_SHORT_VERSION_STRING 0.1.0
+    MACOSX_FRAMEWORK_INFO_PLIST     ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in
+    PUBLIC_HEADER
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/SingScoring/SingScoring.h;${CMAKE_CURRENT_SOURCE_DIR}/include/SingScoring/SSCSession.h"
+    XCODE_ATTRIBUTE_DEFINES_MODULE YES
+    XCODE_ATTRIBUTE_CLANG_ENABLE_MODULES YES
+    XCODE_ATTRIBUTE_ENABLE_BITCODE NO
+    XCODE_ATTRIBUTE_SKIP_INSTALL NO
+    XCODE_ATTRIBUTE_BUILD_LIBRARY_FOR_DISTRIBUTION YES
+)

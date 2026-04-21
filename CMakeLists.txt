@@ -9,7 +9,11 @@ option(SINGSCORING_BUILD_TESTS "Build unit tests" ON)
 
 add_subdirectory(core)
 
-if(SINGSCORING_BUILD_TESTS AND NOT ANDROID AND NOT IOS)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    add_subdirectory(bindings/ios)
+endif()
+
+if(SINGSCORING_BUILD_TESTS AND NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     enable_testing()
     add_subdirectory(tests)
 endif()
