@@ -16,6 +16,8 @@ add_executable(singscoring_tests
     test_json_parser.cpp
     test_zip_loader.cpp
     test_song_integration.cpp
+    test_mp3_decoder.cpp
+    test_pitch_detector.cpp
 )
 
 # Tests poke at internal types (Note, LrcLine, etc). Give them access to core/src/.
