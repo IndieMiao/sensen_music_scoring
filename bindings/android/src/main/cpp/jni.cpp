@@ -21,12 +21,13 @@ Java_com_sensen_singscoring_SingScoringSession_nativeOpen(JNIEnv* env, jclass, j
 
 JNIEXPORT void JNICALL
 Java_com_sensen_singscoring_SingScoringSession_nativeFeedPcm(
-        JNIEnv* env, jclass, jlong handle, jfloatArray samples, jint sampleRate) {
+        JNIEnv* env, jclass, jlong handle, jfloatArray samples, jint count, jint sampleRate) {
     auto* s = reinterpret_cast<ss_session*>(handle);
-    if (!s || !samples) return;
-    jsize n = env->GetArrayLength(samples);
+    if (!s || !samples || count <= 0) return;
+    jsize len = env->GetArrayLength(samples);
+    if (count > len) count = len;
     jfloat* data = env->GetFloatArrayElements(samples, nullptr);
-    ss_feed_pcm(s, data, static_cast<int>(n), static_cast<int>(sampleRate));
+    ss_feed_pcm(s, data, static_cast<int>(count), static_cast<int>(sampleRate));
     env->ReleaseFloatArrayElements(samples, data, JNI_ABORT);
 }
 

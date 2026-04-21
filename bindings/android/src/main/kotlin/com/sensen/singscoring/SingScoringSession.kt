@@ -11,9 +11,15 @@ package com.sensen.singscoring
  */
 class SingScoringSession private constructor(private var handle: Long) : AutoCloseable {
 
-    fun feedPcm(samples: FloatArray, sampleRate: Int) {
+    /**
+     * Feed mic samples. [count] defaults to the full array; pass the actual
+     * number of valid samples when reading into a reusable buffer.
+     */
+    fun feedPcm(samples: FloatArray, sampleRate: Int, count: Int = samples.size) {
         check(handle != 0L) { "session already closed" }
-        nativeFeedPcm(handle, samples, sampleRate)
+        require(count in 0..samples.size) { "count=$count out of range [0, ${samples.size}]" }
+        if (count == 0) return
+        nativeFeedPcm(handle, samples, count, sampleRate)
     }
 
     /** Returns a score in [10, 99]. 60 is the pass threshold. */
@@ -45,7 +51,7 @@ class SingScoringSession private constructor(private var handle: Long) : AutoClo
         val version: String get() = nativeVersion()
 
         @JvmStatic private external fun nativeOpen(zipPath: String): Long
-        @JvmStatic private external fun nativeFeedPcm(handle: Long, samples: FloatArray, sampleRate: Int)
+        @JvmStatic private external fun nativeFeedPcm(handle: Long, samples: FloatArray, count: Int, sampleRate: Int)
         @JvmStatic private external fun nativeFinalize(handle: Long): Int
         @JvmStatic private external fun nativeClose(handle: Long)
         @JvmStatic private external fun nativeVersion(): String
