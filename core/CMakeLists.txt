@@ -14,6 +14,7 @@ add_library(singscoring_core STATIC
     src/json_parser.cpp
     src/mp3_decoder.cpp
     src/pitch_detector.cpp
+    src/scorer.cpp
     ${MINIZ_DIR}/miniz.c
 )
 

@@ -1,0 +1,120 @@
+#include <gtest/gtest.h>
+
+#include <cmath>
+#include <limits>
+#include <vector>
+
+#include "pitch_detector.h"
+#include "scorer.h"
+#include "types.h"
+
+namespace {
+
+float midi_to_hz(int midi) {
+    return 440.0f * std::pow(2.0f, (midi - 69) / 12.0f);
+}
+
+ss::PitchFrame frame_at(double time_ms, float hz) {
+    ss::PitchFrame f;
+    f.time_ms    = time_ms;
+    f.f0_hz      = hz;
+    f.confidence = 0.9f;
+    return f;
+}
+
+ss::PitchFrame unvoiced_at(double time_ms) {
+    ss::PitchFrame f;
+    f.time_ms    = time_ms;
+    f.f0_hz      = std::numeric_limits<float>::quiet_NaN();
+    f.confidence = 0.0f;
+    return f;
+}
+
+} // namespace
+
+TEST(Scorer, perfect_pitch_hits_max_score) {
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(60)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].score, 1.0f, 0.01f);
+
+    int agg = ss::aggregate_score(notes, per);
+    EXPECT_GE(agg, 95);
+}
+
+TEST(Scorer, one_semitone_off_gets_mid_score) {
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(61)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    // err=1.0 → score = 1 - (0.5/2.5)*0.9 = 0.82
+    EXPECT_NEAR(per[0].score, 0.82f, 0.02f);
+}
+
+TEST(Scorer, way_off_pitch_hits_floor) {
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(75)));  // octave+ away
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].score, 0.1f, 0.01f);
+
+    int agg = ss::aggregate_score(notes, per);
+    EXPECT_LE(agg, 25);
+}
+
+TEST(Scorer, unvoiced_user_gets_floor) {
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) frames.push_back(unvoiced_at(t));
+
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_TRUE(std::isnan(per[0].detected_midi));
+    EXPECT_NEAR(per[0].score, 0.1f, 0.01f);
+}
+
+TEST(Scorer, aggregate_is_duration_weighted) {
+    // Two notes: one 100ms (wrong), one 1000ms (right). Long note should dominate.
+    std::vector<ss::Note> notes = {
+        {0.0,    100.0, 60},
+        {100.0, 1100.0, 62},
+    };
+    std::vector<ss::NoteScore> per(2);
+    per[0] = {0.0,    100.0, 60, 72.0f, 0.1f};  // way off
+    per[1] = {100.0, 1100.0, 62, 62.0f, 1.0f};  // perfect
+
+    int agg = ss::aggregate_score(notes, per);
+    // Weighted avg ≈ (100*0.1 + 1000*1.0) / 1100 ≈ 0.918 → 10 + 89*0.918 ≈ 92
+    EXPECT_GE(agg, 85);
+    EXPECT_LE(agg, 95);
+}
+
+TEST(Scorer, empty_reference_returns_floor) {
+    std::vector<ss::Note> notes;
+    std::vector<ss::NoteScore> per;
+    EXPECT_EQ(ss::aggregate_score(notes, per), 10);
+}
+
+TEST(Scorer, score_range_is_valid) {
+    // Exhaustive sanity: no matter the detected pitch, score ∈ [0.1, 1.0].
+    std::vector<ss::Note> notes = {{0.0, 500.0, 60}};
+    for (int midi = 30; midi <= 90; ++midi) {
+        std::vector<ss::PitchFrame> frames;
+        for (double t = 25.0; t < 500.0; t += 10.0) {
+            frames.push_back(frame_at(t, midi_to_hz(midi)));
+        }
+        auto per = ss::score_notes(notes, frames);
+        EXPECT_GE(per[0].score, 0.1f) << "midi=" << midi;
+        EXPECT_LE(per[0].score, 1.0f) << "midi=" << midi;
+    }
+}
