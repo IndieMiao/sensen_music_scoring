@@ -37,4 +37,16 @@
     return ss_finalize_score(_session);
 }
 
++ (NSInteger)scoreWithZipPath:(NSString *)zipPath
+                      samples:(const float *)samples
+                        count:(NSInteger)count
+                   sampleRate:(NSInteger)sampleRate
+{
+    if (!zipPath) return 10;
+    return ss_score(zipPath.UTF8String,
+                    samples,
+                    (int)count,
+                    (int)sampleRate);
+}
+
 @end

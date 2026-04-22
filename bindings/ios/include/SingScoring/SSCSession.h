@@ -32,6 +32,16 @@ NS_SWIFT_NAME(SingScoringSession)
 /// Finalize and return the score. Subsequent `feedPCM:` calls are ignored.
 - (NSInteger)finalizeScore;
 
+/// One-shot scoring. Open the zip, score the provided mono float32 PCM
+/// (`samples` of length `count`) against the chorus MIDI, and release
+/// the session. Returns a score in [10, 99]. The first sample is treated
+/// as MIDI t=0 — caller aligns capture to the lyrics scroll.
++ (NSInteger)scoreWithZipPath:(NSString *)zipPath
+                      samples:(const float *)samples
+                        count:(NSInteger)count
+                   sampleRate:(NSInteger)sampleRate
+    NS_SWIFT_NAME(score(zipPath:samples:count:sampleRate:));
+
 @end
 
 NS_ASSUME_NONNULL_END
