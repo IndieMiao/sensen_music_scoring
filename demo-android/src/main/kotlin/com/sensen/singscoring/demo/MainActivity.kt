@@ -25,7 +25,7 @@ import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
 
-    private enum class State { PICKER, COUNTDOWN, RECORDING, SCORING, RESULT }
+    private enum class State { PICKER, PREVIEW, COUNTDOWN, RECORDING, SCORING, RESULT }
 
     private val sampleRate = 44100
     private var state = State.PICKER
@@ -41,6 +41,8 @@ class MainActivity : AppCompatActivity() {
 
     private val main = Handler(Looper.getMainLooper())
     private var autoStopRunnable: Runnable? = null
+    private var mediaPlayer: android.media.MediaPlayer? = null
+    private var previewAutoAdvance: Runnable? = null
 
     private val root by lazy { FrameLayout(this) }
 
