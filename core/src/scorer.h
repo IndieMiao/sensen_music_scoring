@@ -29,6 +29,10 @@ struct SongScoreBreakdown {
     float combined     = 0.0f;   // 0.50*pitch + 0.20*rhythm + 0.15*stability + 0.15*completeness
 };
 
+// Helpers exposed for testing. Pure functions; no state.
+float onset_offset_to_score(double offset_ms);   // |offset| in ms; ≤100 → 1.0, ≥400 → 0.1
+float stddev_to_score(float stddev_semitones);   // ≤0.3 → 1.0, ≥1.5 → 0.1
+
 // Score a single performance against the reference notes.
 // - `frames` are the YIN output over the user's PCM (time-stamped at window center)
 // - Returns per-note scores aligned with `ref_notes` order

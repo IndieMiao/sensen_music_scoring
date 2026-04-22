@@ -118,3 +118,33 @@ TEST(Scorer, score_range_is_valid) {
         EXPECT_LE(per[0].pitch_score, 1.0f) << "midi=" << midi;
     }
 }
+
+TEST(ScorerHelpers, onset_offset_on_time_is_max) {
+    EXPECT_NEAR(ss::onset_offset_to_score(0.0),   1.0f, 0.001f);
+    EXPECT_NEAR(ss::onset_offset_to_score(100.0), 1.0f, 0.001f);
+}
+
+TEST(ScorerHelpers, onset_offset_very_late_is_floor) {
+    EXPECT_NEAR(ss::onset_offset_to_score(400.0),  0.1f, 0.001f);
+    EXPECT_NEAR(ss::onset_offset_to_score(1000.0), 0.1f, 0.001f);
+}
+
+TEST(ScorerHelpers, onset_offset_mid_is_linear) {
+    // Midpoint between 100ms (1.0) and 400ms (0.1) is 250ms → 0.55
+    EXPECT_NEAR(ss::onset_offset_to_score(250.0), 0.55f, 0.01f);
+}
+
+TEST(ScorerHelpers, stddev_zero_is_max) {
+    EXPECT_NEAR(ss::stddev_to_score(0.0f),  1.0f, 0.001f);
+    EXPECT_NEAR(ss::stddev_to_score(0.3f),  1.0f, 0.001f);
+}
+
+TEST(ScorerHelpers, stddev_wide_is_floor) {
+    EXPECT_NEAR(ss::stddev_to_score(1.5f),  0.1f, 0.001f);
+    EXPECT_NEAR(ss::stddev_to_score(10.0f), 0.1f, 0.001f);
+}
+
+TEST(ScorerHelpers, stddev_mid_is_linear) {
+    // Midpoint between 0.3 (1.0) and 1.5 (0.1) is 0.9 → 0.55
+    EXPECT_NEAR(ss::stddev_to_score(0.9f), 0.55f, 0.01f);
+}

@@ -41,6 +41,22 @@ float semitone_error_to_score(float err) {
 
 } // namespace
 
+float onset_offset_to_score(double offset_ms) {
+    double a = offset_ms < 0 ? -offset_ms : offset_ms;
+    if (a <= 100.0) return 1.0f;
+    if (a >= 400.0) return 0.1f;
+    double t = (a - 100.0) / (400.0 - 100.0);
+    return float(1.0 - t * (1.0 - 0.1));
+}
+
+float stddev_to_score(float stddev_semitones) {
+    float s = stddev_semitones < 0 ? -stddev_semitones : stddev_semitones;
+    if (s <= 0.3f) return 1.0f;
+    if (s >= 1.5f) return 0.1f;
+    float t = (s - 0.3f) / (1.5f - 0.3f);
+    return 1.0f - t * (1.0f - 0.1f);
+}
+
 std::vector<NoteScore> score_notes(
     const std::vector<Note>&       ref_notes,
     const std::vector<PitchFrame>& frames)
