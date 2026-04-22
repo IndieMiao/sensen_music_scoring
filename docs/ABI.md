@@ -12,7 +12,22 @@ void        ss_feed_pcm(ss_session*, const float* samples, int n, int sample_rat
 int         ss_finalize_score(ss_session*);   // 10..99
 void        ss_close(ss_session*);
 const char* ss_version(void);
+
+// One-shot — recommended path for app integrations.
+int         ss_score(const char* zip_path,
+                     const float* samples, int n, int sample_rate);  // 10..99
 ```
+
+## One-shot scoring
+
+`ss_score` opens the zip, scores the supplied PCM buffer, and releases
+everything in one call. Sample 0 is treated as MIDI t=0 — the caller is
+responsible for starting capture in sync with the chorus reference (e.g.,
+when a lyrics scroll begins). Returns the same `[10, 99]` integer as
+`ss_finalize_score`. This is the recommended entry point for app
+integrations; the `open / feed_pcm / finalize_score / close` quartet is
+kept for advanced flows that need a session handle (chunked upload,
+pre-warming, parallel takes against one open session).
 
 ## Lifecycle
 

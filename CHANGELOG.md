@@ -6,6 +6,23 @@ the C ABI may change between minor versions; from 1.0.0 onward, only a major
 bump may break the five functions declared in
 [`core/include/singscoring.h`](core/include/singscoring.h).
 
+## 0.3.0 — 2026-04-22
+
+### Added
+- `ss_score(zip_path, samples, n, sample_rate)` — one-shot C-ABI entry
+  that opens, feeds, finalizes, and closes in a single call. Surfaced in
+  Kotlin as `SingScoringSession.score(...)` (static) and in Obj-C as
+  `+[SSCSession scoreWithZipPath:samples:count:sampleRate:]`.
+
+### Changed
+- The Android demo no longer plays a backing track. Flow is now
+  `pick song → countdown → scrolling lyrics + record → score`. Lyrics
+  scroll from the parsed LRC; the user sings to them with no audio
+  reference. ExoPlayer / `media3` dependency removed from the demo.
+- Scoring contract is documented as one-shot first: `PCM[0]` is treated
+  as `MIDI t=0`. The streaming `ss_open / ss_feed_pcm / ss_finalize_score
+  / ss_close` quartet remains available for advanced flows.
+
 ## 0.2.0 — 2026-04-22
 
 ### Added

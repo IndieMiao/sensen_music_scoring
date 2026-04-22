@@ -7,8 +7,8 @@ import java.util.zip.ZipInputStream
 /**
  * Manages the song-highlight zip assets bundled with the demo.
  *
- * The SDK opens songs by filesystem path, and ExoPlayer needs a URI for the mp3,
- * so both the zip and the extracted mp3 are staged into the app's cache dir.
+ * The SDK opens songs by filesystem path, so the zip is staged into the app's
+ * cache dir. The extracted mp3 is also kept for any future preview playback.
  */
 object SongAssets {
 

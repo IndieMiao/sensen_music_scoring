@@ -5,7 +5,7 @@
 // Pre-1.0 the ABI may change between minor versions; from 1.0.0 onward only
 // major bumps may break the C ABI declared in singscoring.h.
 #define SSC_VERSION_MAJOR 0
-#define SSC_VERSION_MINOR 2
+#define SSC_VERSION_MINOR 3
 #define SSC_VERSION_PATCH 0
 
 #define SSC_STRINGIFY_(x) #x

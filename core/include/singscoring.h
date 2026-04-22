@@ -8,6 +8,9 @@ extern "C" {
 typedef struct ss_session ss_session;
 
 /**
+ * Advanced — for chunked / pre-warmed flows. Most callers should use ss_score
+ * (below) for the standard one-shot path.
+ *
  * Open a scoring session from a song zip on disk.
  * The zip must contain [songCode]_chorus.{mp3,mid,lrc,json}.
  * Returns NULL on failure.

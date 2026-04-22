@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Cross-platform SDK for real-time singing evaluation. Android (AAR) + iOS (xcframework) bindings wrap a portable C++17 scoring engine that compares a user's microphone input to a reference MIDI melody and returns an integer score in **[10, 99]** (pass ≥ 60).
 
-Status as of **0.2.0**: full pipeline shipping (MIDI parser + YIN pitch detector + per-note scorer + `[10, 99]` aggregate) on Android (live AAR + demo APK) and iOS (scaffolded Obj-C++ framework + xcframework build script). See [CHANGELOG.md](CHANGELOG.md) for per-release notes and [docs/ABI.md](docs/ABI.md) for the stability contract.
+Status as of **0.3.0**: full pipeline shipping (MIDI parser + YIN pitch detector + per-note scorer + `[10, 99]` aggregate) on Android (live AAR + demo APK) and iOS (scaffolded Obj-C++ framework + xcframework build script). See [CHANGELOG.md](CHANGELOG.md) for per-release notes and [docs/ABI.md](docs/ABI.md) for the stability contract.
 
 ## Architecture
 
@@ -22,7 +22,7 @@ singscoring.h  (core/include/singscoring.h)
 core/src/*.cpp  — portable C++17, no platform deps
 ```
 
-Both bindings (Android JNI and, eventually, iOS Obj-C++) talk to the core **only through the five functions in `singscoring.h`**: `ss_open / ss_feed_pcm / ss_finalize_score / ss_close / ss_version`. Never leak platform types (JNIEnv, NSString, file handles) into `core/`; never leak C++ types (`std::string`, templates) across the ABI boundary.
+Both bindings (Android JNI and iOS Obj-C++) talk to the core **only through the six functions in `singscoring.h`**: `ss_score` (one-shot, the standard path) plus the streaming quartet `ss_open / ss_feed_pcm / ss_finalize_score / ss_close` and `ss_version`. Never leak platform types (JNIEnv, NSString, file handles) into `core/`; never leak C++ types (`std::string`, templates) across the ABI boundary.
 
 The Android AAR module lives at `bindings/android/` but is registered in Gradle as `:singscoring` (see `settings.gradle.kts`). Its `CMakeLists.txt` uses `add_subdirectory` to pull in `core/` — there is no second copy of the scoring code.
 
@@ -35,6 +35,8 @@ Decisions baked into the engine from inspecting `SongHighlightSamples/*.zip`:
 - **LRC is display-only.** Never feed LRC timestamps into the scorer; they can be misaligned from the MIDI intentionally (e.g., duet lines).
 - **All observed MIDIs are single-track monophonic vocal melodies** in MIDI 48–75 (~130–620 Hz). Pitch detector search range clamped accordingly.
 - Aggregate per-note scores weighted by `note.duration_ms` (long held notes test real pitch control).
+- **One-shot is the standard contract.** The app records the chorus into a single PCM buffer and calls `ss_score(...)`; sample 0 is treated as MIDI t=0. The SDK does not align, trim leading silence, or take an offset parameter — the caller starts capture in sync with the lyrics scroll.
+- **No backing track in the demo.** The user sings to the scrolling lyrics. This avoids speaker-to-mic leakage that would otherwise make YIN detect the playback's pitch (which matches the MIDI by construction) and inflate scores during instrumental gaps.
 
 ## Common commands
 
