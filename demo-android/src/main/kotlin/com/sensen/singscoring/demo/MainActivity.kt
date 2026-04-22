@@ -3,10 +3,11 @@ package com.sensen.singscoring.demo
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
@@ -17,27 +18,36 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
 import com.sensen.singscoring.SingScoringSession
+import java.io.File
+import java.util.zip.ZipInputStream
+import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
 
-    private enum class State { PICKER, RUNNING, RESULT }
+    private enum class State { PICKER, COUNTDOWN, RECORDING, SCORING, RESULT }
 
     private val sampleRate = 44100
     private var state = State.PICKER
-    private var session: SingScoringSession? = null
     private var recorder: AudioRecorder? = null
-    private var player: ExoPlayer? = null
     private var pendingSong: SongAssets.Song? = null
+    private var stagedZipPath: String? = null
+    private var lyrics: List<LrcLine> = emptyList()
+
+    // Recording buffer (owned by the activity; the recorder just appends).
+    private val pcm = ArrayList<FloatArray>()
+    private var pcmTotalSamples = 0
+    private var recordingStartMs = 0L  // SystemClock.elapsedRealtime when "Sing!" hits
+
+    private val main = Handler(Looper.getMainLooper())
+    private var autoStopRunnable: Runnable? = null
 
     private val root by lazy { FrameLayout(this) }
 
     private val requestMicPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) pendingSong?.let { startRun(it) }
+        if (granted) pendingSong?.let { startCountdown(it) }
         else toastLike("Microphone permission denied")
     }
 
@@ -50,7 +60,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        stopEverything()
+        cancelAutoStop()
+        recorder?.stop(); recorder = null
     }
 
     // --- screens -----------------------------------------------------------
@@ -80,21 +91,61 @@ class MainActivity : AppCompatActivity() {
         root.addView(col)
     }
 
-    private fun renderRunning(song: SongAssets.Song) {
-        state = State.RUNNING
+    private fun renderCountdown(song: SongAssets.Song, secondsLeft: Int) {
+        state = State.COUNTDOWN
+        root.removeAllViews()
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        }
+        col.addView(titleView("🎤  ${song.displayName}"))
+        col.addView(subtitleView("Get ready to sing the chorus."))
+        col.addView(TextView(this).apply {
+            text = if (secondsLeft > 0) secondsLeft.toString() else "Sing!"
+            textSize = 96f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                .apply { topMargin = 96 }
+        })
+        root.addView(col)
+    }
+
+    private fun renderRecording(song: SongAssets.Song) {
+        state = State.RECORDING
         root.removeAllViews()
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
         col.addView(titleView("🎤  ${song.displayName}"))
-        col.addView(subtitleView("Playback + capture running.\nSing along to the reference track."))
+
+        val view = LyricsScrollView(this).apply {
+            setLines(lyrics)
+            setClock { SystemClock.elapsedRealtime() - recordingStartMs }
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f)
+                .apply { topMargin = 16; bottomMargin = 16 }
+        }
+        col.addView(view)
+
         col.addView(Button(this).apply {
             text = "Stop & score"
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-                .apply { topMargin = 48 }
             setOnClickListener { finishAndScore() }
         })
+        root.addView(col)
+    }
+
+    private fun renderScoring(song: SongAssets.Song) {
+        state = State.SCORING
+        root.removeAllViews()
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        }
+        col.addView(titleView(song.displayName))
+        col.addView(subtitleView("Scoring…"))
         root.addView(col)
     }
 
@@ -135,64 +186,109 @@ class MainActivity : AppCompatActivity() {
         val granted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
-        if (granted) startRun(song) else requestMicPermission.launch(Manifest.permission.RECORD_AUDIO)
+        if (granted) startCountdown(song) else requestMicPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
-    private fun startRun(song: SongAssets.Song) {
+    private fun startCountdown(song: SongAssets.Song) {
+        // Stage the zip and parse LRC up-front so the recording phase has nothing to wait on.
         val staged = try {
             SongAssets.stage(this, song)
         } catch (e: Exception) {
             toastLike("Failed to stage song: ${e.message}")
             return
         }
-        val newSession = try {
-            SingScoringSession.open(staged.zipPath)
-        } catch (e: Exception) {
-            toastLike("Failed to open song: ${e.message}")
-            return
-        }
-        session = newSession
+        stagedZipPath = staged.zipPath
+        lyrics = readLyrics(staged.zipPath, song.code)
+
+        // 3 → 2 → 1 → "Sing!" → start recording.
+        renderCountdown(song, 3)
+        main.postDelayed({ renderCountdown(song, 2) }, 1000)
+        main.postDelayed({ renderCountdown(song, 1) }, 2000)
+        main.postDelayed({
+            renderCountdown(song, 0)            // "Sing!"
+            beginRecording(song)                // also picks up the t=0 instant
+        }, 3000)
+    }
+
+    private fun beginRecording(song: SongAssets.Song) {
+        pcm.clear()
+        pcmTotalSamples = 0
+        recordingStartMs = SystemClock.elapsedRealtime()
 
         val rec = AudioRecorder(sampleRate) { samples, count ->
-            try { newSession.feedPcm(samples, sampleRate, count) } catch (_: Exception) {}
+            // Copy into our own array so the recorder can reuse its buffer.
+            val copy = FloatArray(count)
+            System.arraycopy(samples, 0, copy, 0, count)
+            synchronized(pcm) {
+                pcm.add(copy)
+                pcmTotalSamples += count
+            }
         }
         try {
             rec.start()
         } catch (e: Exception) {
             toastLike("Recorder start failed: ${e.message}")
-            newSession.close()
-            session = null
             return
         }
         recorder = rec
 
-        val p = ExoPlayer.Builder(this).build().apply {
-            setMediaItem(MediaItem.fromUri(Uri.fromFile(java.io.File(staged.mp3Path))))
-            prepare()
-            playWhenReady = true
-        }
-        player = p
+        // Move from "Sing!" splash to the actual scrolling-lyrics screen after a brief beat
+        // so the user sees the splash render. 250 ms is enough for the eye.
+        main.postDelayed({ if (state == State.COUNTDOWN) renderRecording(song) }, 250)
 
-        renderRunning(song)
+        // Auto-stop a short tail past the last lyric line (or at 30 s if LRC is empty).
+        val tailMs = (lyrics.lastOrNull()?.timeMs ?: 30_000L) + 1500L
+        autoStopRunnable = Runnable { if (state == State.RECORDING) finishAndScore() }
+        main.postDelayed(autoStopRunnable!!, tailMs)
     }
 
     private fun finishAndScore() {
         val song = pendingSong ?: return
+        val zip = stagedZipPath ?: return
+        cancelAutoStop()
         recorder?.stop(); recorder = null
-        player?.apply { stop(); release() }; player = null
 
-        val score = session?.let {
-            try { it.finalizeScore() } catch (_: Exception) { 10 }
-        } ?: 10
-        session?.close(); session = null
+        renderScoring(song)
 
-        renderResult(song, score)
+        val flat: FloatArray = synchronized(pcm) {
+            val out = FloatArray(pcmTotalSamples)
+            var off = 0
+            for (chunk in pcm) {
+                System.arraycopy(chunk, 0, out, off, chunk.size)
+                off += chunk.size
+            }
+            out
+        }
+
+        thread(name = "ss-scoring", isDaemon = true) {
+            val score = try {
+                SingScoringSession.score(zip, flat, sampleRate)
+            } catch (_: Exception) { 10 }
+            main.post { renderResult(song, score) }
+        }
     }
 
-    private fun stopEverything() {
-        recorder?.stop(); recorder = null
-        player?.release(); player = null
-        session?.close(); session = null
+    private fun cancelAutoStop() {
+        autoStopRunnable?.let { main.removeCallbacks(it) }
+        autoStopRunnable = null
+    }
+
+    // --- helpers -----------------------------------------------------------
+
+    private fun readLyrics(zipPath: String, songCode: String): List<LrcLine> {
+        val target = "${songCode}_chorus.lrc"
+        return try {
+            ZipInputStream(File(zipPath).inputStream()).use { zis ->
+                while (true) {
+                    val e = zis.nextEntry ?: return emptyList()
+                    if (e.name.endsWith(target)) {
+                        val text = zis.readBytes().toString(Charsets.UTF_8)
+                        return LrcParser.parse(text)
+                    }
+                }
+                @Suppress("UNREACHABLE_CODE") emptyList()
+            }
+        } catch (_: Exception) { emptyList() }
     }
 
     // --- view helpers ------------------------------------------------------
@@ -211,7 +307,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toastLike(msg: String) {
-        // Kept dependency-light — no Toast to avoid extra resource churn on failure paths.
         android.util.Log.w("SingScoringDemo", msg)
         TextView(this).apply {
             text = msg
