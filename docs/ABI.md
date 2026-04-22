@@ -1,6 +1,6 @@
 # SingScoring C ABI
 
-The entire public surface is the five functions in
+The entire public surface is the six functions in
 [`core/include/singscoring.h`](../core/include/singscoring.h). Everything
 above the C boundary — JNI, the Kotlin `SingScoringSession`, the Obj-C
 `SSCSession`, its Swift alias — is a thin marshaller that must never touch
@@ -37,6 +37,7 @@ pre-warming, parallel takes against one open session).
  (zip on disk)   (audio thread OK)    (any thread, once)
 ```
 
+- `ss_score` collapses the lifecycle above into a single call; the diagram and bullets that follow describe the streaming variant.
 - `ss_open` returns `NULL` on failure. Treat as "could not parse zip".
 - `ss_feed_pcm` accepts mono float32 in `[-1, 1]`. Silently drops calls with
   a `sample_rate` different from the first non-empty one — the engine does
@@ -57,7 +58,7 @@ pre-warming, parallel takes against one open session).
 
 - Pre-1.0 the ABI may change between minor versions. Check `ss_version()`
   against the matching `CHANGELOG.md` entry when integrating a new build.
-- From 1.0.0 onward only a major-version bump may break the five functions.
+- From 1.0.0 onward only a major-version bump may break the six functions.
 
 ## What's *not* exposed
 

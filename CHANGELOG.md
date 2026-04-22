@@ -3,7 +3,7 @@
 All notable changes to the SingScoring SDK will be recorded here.
 Versions follow [Semantic Versioning](https://semver.org/). Until **1.0.0**
 the C ABI may change between minor versions; from 1.0.0 onward, only a major
-bump may break the five functions declared in
+bump may break the six functions declared in
 [`core/include/singscoring.h`](core/include/singscoring.h).
 
 ## 0.3.0 — 2026-04-22
