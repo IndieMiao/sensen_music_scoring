@@ -89,17 +89,20 @@ extern "C" int ss_finalize_score(ss_session* s) {
     double last_note_end    = notes.back().end_ms;
 
     auto per_note = ss::score_notes(notes, frames);
+    auto bd       = ss::compute_breakdown(notes, per_note);
     int  score    = ss::aggregate_score(notes, per_note);
 
     SS_LOGI("finalize: pcm=%zu rate=%d durMs=%.0f peak=%.4f rms=%.4f "
             "frames=%zu voiced=%zu voicedSpan=[%.0f..%.0f] "
-            "notes=%zu firstNote=[%.0f..%.0f] lastNote=[%.0f..%.0f] score=%d",
+            "notes=%zu firstNote=[%.0f..%.0f] lastNote=[%.0f..%.0f] "
+            "pitch=%.3f rhythm=%.3f stability=%.3f completeness=%.3f combined=%.3f score=%d",
             s->pcm.size(), s->sample_rate,
             double(s->pcm.size()) * 1000.0 / s->sample_rate,
             peak, rms,
             frames.size(), n_voiced, first_voiced_ms, last_voiced_ms,
             notes.size(), first_note_start, first_note_end,
             last_note_start, last_note_end,
+            bd.pitch, bd.rhythm, bd.stability, bd.completeness, bd.combined,
             score);
 
     return score;
