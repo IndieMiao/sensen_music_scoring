@@ -255,17 +255,35 @@ TEST(Breakdown, pitch_is_duration_weighted) {
     EXPECT_NEAR(b.pitch, 0.918f, 0.01f);
 }
 
-TEST(Breakdown, stability_skips_notes_with_few_voiced_frames) {
+TEST(Breakdown, stability_is_duration_weighted_across_all_notes) {
+    // Per-note stability_score already encodes "insufficient data" as 1.0 (neutral)
+    // and "silent" as 0.1 (floor). compute_breakdown duration-weights every note;
+    // short neutral notes contribute small weight, long measured notes dominate.
     std::vector<ss::Note> notes = {
         {0.0,    100.0, 60},
         {100.0, 1100.0, 62},
     };
     std::vector<ss::NoteScore> per(2);
-    per[0] = {0.0,    100.0, 60, 60.0f, 1.0f, 1.0f, 1.0f, 1};   // <2 voiced → skipped
-    per[1] = {100.0, 1100.0, 62, 62.0f, 1.0f, 1.0f, 0.4f, 50};  // counted
+    per[0] = {0.0,    100.0, 60, 60.0f, 1.0f, 1.0f, 1.0f, 1};   // short, neutral 1.0
+    per[1] = {100.0, 1100.0, 62, 62.0f, 1.0f, 1.0f, 0.4f, 50};  // long, measured 0.4
 
     auto b = ss::compute_breakdown(notes, per);
-    EXPECT_NEAR(b.stability, 0.4f, 0.01f);
+    // (100*1.0 + 1000*0.4) / 1100 ≈ 0.4545
+    EXPECT_NEAR(b.stability, 0.4545f, 0.01f);
+}
+
+TEST(Breakdown, stability_all_silent_is_floor) {
+    // Regression guard: per Task 3, silent notes have stability_score=0.1.
+    // Aggregate must also floor at 0.1 (not a 1.0 neutral fallback).
+    std::vector<ss::Note> notes = {
+        {0.0,   500.0, 60},
+        {500.0, 1500.0, 62},
+    };
+    std::vector<ss::NoteScore> per(2);
+    per[0] = {  0.0,  500.0, 60, std::numeric_limits<float>::quiet_NaN(), 0.1f, 0.1f, 0.1f, 0};
+    per[1] = {500.0, 1500.0, 62, std::numeric_limits<float>::quiet_NaN(), 0.1f, 0.1f, 0.1f, 0};
+    auto b = ss::compute_breakdown(notes, per);
+    EXPECT_NEAR(b.stability, 0.1f, 0.001f);
 }
 
 TEST(Breakdown, completeness_is_voiced_fraction) {
