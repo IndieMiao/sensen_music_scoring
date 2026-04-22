@@ -55,3 +55,13 @@ extern "C" int ss_finalize_score(ss_session* s) {
 extern "C" void ss_close(ss_session* s) {
     delete s;
 }
+
+extern "C" int ss_score(const char* zip_path,
+                        const float* samples, int n_samples, int sample_rate) {
+    ss_session* s = ss_open(zip_path);
+    if (!s) return 10;
+    ss_feed_pcm(s, samples, n_samples, sample_rate);
+    int score = ss_finalize_score(s);
+    ss_close(s);
+    return score;
+}

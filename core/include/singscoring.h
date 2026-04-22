@@ -37,6 +37,22 @@ void ss_close(ss_session* s);
  */
 const char* ss_version(void);
 
+/**
+ * One-shot scoring: open the song zip, score the supplied PCM buffer
+ * against the chorus MIDI, and release everything. Equivalent to
+ * ss_open + ss_feed_pcm + ss_finalize_score + ss_close, but doesn't
+ * require the caller to manage a session handle.
+ *
+ * PCM contract: mono float32, sample_rate Hz. Sample 0 is treated as
+ * MIDI t=0 — caller is responsible for starting capture in sync with
+ * the chorus reference (e.g., when the lyrics scroll begins).
+ *
+ * Returns a score in [10, 99]. Returns 10 on any failure
+ * (unreadable zip, empty PCM, parse failure, etc.).
+ */
+int ss_score(const char* zip_path,
+             const float* samples, int n_samples, int sample_rate);
+
 #ifdef __cplusplus
 }
 #endif
