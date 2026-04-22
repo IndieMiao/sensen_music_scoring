@@ -1,19 +1,26 @@
-// Per-note scoring and duration-weighted aggregation.
+// Per-note scoring and duration-weighted aggregation across four dimensions.
 //
-// Shape of the scoring function (per note):
-//   - Take the median detected MIDI pitch across all voiced YIN frames whose
-//     window-center falls inside [note.start_ms, note.end_ms].
-//   - Compare against ref_pitch. Error in semitones → score in [0.1, 1.0]:
-//       err ≤ 0.5  → 1.0     (within vibrato / pitch-bend tolerance)
-//       err ≥ 3.0  → 0.1     (floor — still some credit for trying)
-//       otherwise linearly interpolated between.
-//   - If the user was unvoiced (no frames in the window, or none voiced), score = 0.1.
+// Per note, score_notes produces four signals:
+//   - pitch_score:  median detected MIDI vs ref_pitch, via semitone_error_to_score.
+//       err ≤ 0.5 → 1.0, err ≥ 3.0 → 0.1, linear between. Silence → 0.1.
+//   - rhythm_score: |first_voiced_frame_time - note.start_ms|, via onset_offset_to_score.
+//       offset ≤ 100ms → 1.0, ≥ 400ms → 0.1, linear between. Silence → 0.1.
+//   - stability_score: stddev of voiced MIDI values, via stddev_to_score.
+//       ≤ 0.3 st → 1.0, ≥ 1.5 st → 0.1, linear between. Silence → 0.1; <2 voiced → 1.0 neutral.
+//   - voiced_frames:  count of voiced YIN frames inside the note window.
 //
-// Rationale for these breakpoints:
-//   - 0.5 semitone (~50 cents) is roughly the lower bound of a perceived "wrong note"
+// compute_breakdown aggregates these into a song-level SongScoreBreakdown with
+// fixed weights (0.50 pitch + 0.20 rhythm + 0.15 stability + 0.15 completeness).
+// aggregate_score is then a thin wrapper mapping combined ∈ [0,1] → int ∈ [10, 99].
+//
+// Rationale for the per-dimension breakpoints:
+//   - 0.5 semitone (~50 cents) is the lower bound of a perceived "wrong note"
 //     and comfortably absorbs vibrato. Untrained singers drift well inside it.
-//   - 3 semitones is a minor third — clearly wrong but still "close-ish" pitch tracking,
-//     so we don't zero them out. The [10, 99] score range has a 10 floor anyway.
+//   - 3 semitones is a minor third — clearly wrong but still "close-ish" pitch
+//     tracking, so we don't zero them out. The [10, 99] range has a 10 floor.
+//   - 100ms / 400ms onset thresholds roughly match human reaction variability
+//     and clear-lateness perception for phone-based karaoke.
+//   - 0.3 / 1.5 semitone stability thresholds separate vibrato from true wobble.
 
 #include "scorer.h"
 

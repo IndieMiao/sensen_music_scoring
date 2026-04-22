@@ -286,6 +286,22 @@ TEST(Breakdown, stability_all_silent_is_floor) {
     EXPECT_NEAR(b.stability, 0.1f, 0.001f);
 }
 
+TEST(Breakdown, stability_all_short_notes_is_neutral) {
+    // Boundary: every note has exactly 1 voiced frame, so score_notes wrote
+    // neutral 1.0 into stability_score for each. Aggregate must be 1.0 —
+    // guards against a hypothetical policy regression that would accidentally
+    // ignore or floor these "too few samples" notes.
+    std::vector<ss::Note> notes = {
+        {0.0,   100.0, 60},
+        {100.0, 200.0, 62},
+    };
+    std::vector<ss::NoteScore> per(2);
+    per[0] = {  0.0, 100.0, 60, 60.0f, 1.0f, 1.0f, 1.0f, 1};
+    per[1] = {100.0, 200.0, 62, 62.0f, 1.0f, 1.0f, 1.0f, 1};
+    auto b = ss::compute_breakdown(notes, per);
+    EXPECT_NEAR(b.stability, 1.0f, 0.001f);
+}
+
 TEST(Breakdown, completeness_is_voiced_fraction) {
     std::vector<ss::Note> notes = {
         {0.0,   100.0, 60},
