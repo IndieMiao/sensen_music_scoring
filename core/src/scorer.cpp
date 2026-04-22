@@ -64,36 +64,61 @@ std::vector<NoteScore> score_notes(
     std::vector<NoteScore> out;
     out.reserve(ref_notes.size());
 
-    // Frames are time-ordered; we walk a sliding index for each note.
     size_t frame_cursor = 0;
 
     for (const auto& note : ref_notes) {
-        // Advance to first frame whose center is ≥ note.start_ms.
         while (frame_cursor < frames.size() && frames[frame_cursor].time_ms < note.start_ms) {
             ++frame_cursor;
         }
 
         std::vector<float> midi_vals;
+        double first_voiced_ms = -1.0;
         for (size_t i = frame_cursor; i < frames.size(); ++i) {
             if (frames[i].time_ms > note.end_ms) break;
             if (frames[i].voiced()) {
+                if (first_voiced_ms < 0) first_voiced_ms = frames[i].time_ms;
                 midi_vals.push_back(hz_to_midi(frames[i].f0_hz));
             }
         }
 
         NoteScore ns;
-        ns.start_ms  = note.start_ms;
-        ns.end_ms    = note.end_ms;
-        ns.ref_pitch = note.pitch;
+        ns.start_ms      = note.start_ms;
+        ns.end_ms        = note.end_ms;
+        ns.ref_pitch     = note.pitch;
+        ns.voiced_frames = int(midi_vals.size());
 
         if (midi_vals.empty()) {
-            ns.detected_midi = std::numeric_limits<float>::quiet_NaN();
-            ns.pitch_score   = 0.1f;
+            ns.detected_midi   = std::numeric_limits<float>::quiet_NaN();
+            ns.pitch_score     = 0.1f;
+            ns.rhythm_score    = 0.1f;
+            ns.stability_score = 0.1f;
         } else {
-            std::sort(midi_vals.begin(), midi_vals.end());
-            float med = midi_vals[midi_vals.size() / 2];
+            // Pitch: median MIDI vs ref.
+            std::vector<float> sorted = midi_vals;
+            std::sort(sorted.begin(), sorted.end());
+            float med = sorted[sorted.size() / 2];
             ns.detected_midi = med;
             ns.pitch_score   = semitone_error_to_score(med - float(note.pitch));
+
+            // Rhythm: onset offset vs note start.
+            ns.rhythm_score = onset_offset_to_score(first_voiced_ms - note.start_ms);
+
+            // Stability: stddev of voiced MIDI values. Neutral (1.0) if <2 samples.
+            if (midi_vals.size() < 2) {
+                ns.stability_score = 1.0f;
+            } else {
+                double mean = 0.0;
+                for (float v : midi_vals) mean += v;
+                mean /= double(midi_vals.size());
+                double var = 0.0;
+                for (float v : midi_vals) {
+                    double d = double(v) - mean;
+                    var += d * d;
+                }
+                var /= double(midi_vals.size());
+                float stddev = float(std::sqrt(var));
+                ns.stability_score = stddev_to_score(stddev);
+            }
         }
         out.push_back(ns);
     }

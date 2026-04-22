@@ -148,3 +148,95 @@ TEST(ScorerHelpers, stddev_mid_is_linear) {
     // Midpoint between 0.3 (1.0) and 1.5 (0.1) is 0.9 → 0.55
     EXPECT_NEAR(ss::stddev_to_score(0.9f), 0.55f, 0.01f);
 }
+
+TEST(ScorerHelpers, onset_offset_negative_is_symmetric) {
+    // Absolute-value path coverage: -250 ms should score the same as +250 ms.
+    EXPECT_NEAR(ss::onset_offset_to_score(-250.0), ss::onset_offset_to_score(250.0), 0.001f);
+}
+
+TEST(Scorer, rhythm_on_time_is_max) {
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(60)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].rhythm_score, 1.0f, 0.01f);  // first voiced at 50ms, ≤100 → 1.0
+}
+
+TEST(Scorer, rhythm_late_onset_is_floor) {
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 500.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(60)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].rhythm_score, 0.1f, 0.01f);  // offset=500ms, ≥400 → 0.1
+}
+
+TEST(Scorer, rhythm_unvoiced_is_floor) {
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) frames.push_back(unvoiced_at(t));
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].rhythm_score, 0.1f, 0.01f);
+}
+
+TEST(Scorer, stability_steady_pitch_is_max) {
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(60)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].stability_score, 1.0f, 0.01f);
+}
+
+TEST(Scorer, stability_wobbly_pitch_scores_low) {
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    // Alternate between MIDI 59 and 61 → stddev ≈ 1.0 semitone
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        int odd = (int(t) / 10) & 1;
+        frames.push_back(frame_at(t, midi_to_hz(odd ? 61 : 59)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    // stddev=1.0 → (1.0-0.3)/(1.5-0.3) = 0.583 → 1.0 - 0.583*0.9 = 0.475
+    EXPECT_NEAR(per[0].stability_score, 0.475f, 0.05f);
+}
+
+TEST(Scorer, voiced_frames_counted) {
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 500.0; t += 10.0) frames.push_back(frame_at(t, midi_to_hz(60)));
+    for (double t = 500.0; t < 1000.0; t += 10.0) frames.push_back(unvoiced_at(t));
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_EQ(per[0].voiced_frames, 45);  // 50..490 step 10 = 45 frames
+}
+
+TEST(Scorer, stability_single_voiced_frame_is_neutral) {
+    // Fewer than 2 voiced frames → stability_score defaults to 1.0 (not penalised)
+    std::vector<ss::Note> notes = {{0.0, 100.0, 60}};
+    std::vector<ss::PitchFrame> frames = {frame_at(50.0, midi_to_hz(60))};
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_EQ(per[0].voiced_frames, 1);
+    EXPECT_NEAR(per[0].stability_score, 1.0f, 0.01f);
+}
+
+TEST(Scorer, stability_zero_voiced_is_floor) {
+    // Zero voiced frames → stability_score = 0.1 (not neutral — silence penalty)
+    std::vector<ss::Note> notes = {{0.0, 100.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 0.0; t < 100.0; t += 10.0) frames.push_back(unvoiced_at(t));
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_EQ(per[0].voiced_frames, 0);
+    EXPECT_NEAR(per[0].stability_score, 0.1f, 0.01f);
+}
