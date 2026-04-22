@@ -41,6 +41,16 @@ void ss_close(ss_session* s);
 const char* ss_version(void);
 
 /**
+ * Last reference-melody note end-time, in milliseconds from MIDI t=0.
+ * This is the scoring horizon (per CLAUDE.md): callers that auto-stop
+ * capture should use this value, not the LRC's last line nor the JSON
+ * `duration`.
+ *
+ * Returns -1 on failure (unreadable zip, no parseable MIDI, no notes).
+ */
+long long ss_melody_end_ms(const char* zip_path);
+
+/**
  * One-shot scoring: open the song zip, score the supplied PCM buffer
  * against the chorus MIDI, and release everything. Equivalent to
  * ss_open + ss_feed_pcm + ss_finalize_score + ss_close, but doesn't

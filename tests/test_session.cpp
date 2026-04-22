@@ -32,3 +32,19 @@ TEST(Session, close_null_is_noop) {
     ss_close(nullptr);  // must not crash
     SUCCEED();
 }
+
+TEST(Session, melody_end_ms_null_path_returns_minus_one) {
+    EXPECT_EQ(ss_melody_end_ms(nullptr), -1);
+}
+
+TEST(Session, melody_end_ms_missing_zip_returns_minus_one) {
+    EXPECT_EQ(ss_melody_end_ms("does_not_exist.zip"), -1);
+}
+
+TEST(Session, melody_end_ms_real_sample_is_positive) {
+    const std::string zip = ss::fixture_path("7162848696587380.zip");
+    long long end_ms = ss_melody_end_ms(zip.c_str());
+    EXPECT_GT(end_ms, 0);
+    // Sanity bound: chorus melodies in the fixtures are well under 10 minutes.
+    EXPECT_LT(end_ms, 600000);
+}

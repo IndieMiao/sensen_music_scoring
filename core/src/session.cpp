@@ -2,6 +2,7 @@
 
 #include "singscoring.h"
 
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -9,6 +10,13 @@
 #include "pitch_detector.h"
 #include "scorer.h"
 #include "song.h"
+
+#ifdef __ANDROID__
+#include <android/log.h>
+#define SS_LOGI(...) __android_log_print(ANDROID_LOG_INFO, "ss-core", __VA_ARGS__)
+#else
+#define SS_LOGI(...) ((void)0)
+#endif
 
 struct ss_session {
     std::unique_ptr<ss::Song> song;
@@ -44,12 +52,57 @@ extern "C" int ss_finalize_score(ss_session* s) {
     if (!s || !s->song) return 10;
     s->finalized = true;
 
-    if (s->pcm.empty() || s->sample_rate <= 0 || s->song->notes.empty()) return 10;
+    if (s->pcm.empty() || s->sample_rate <= 0 || s->song->notes.empty()) {
+        SS_LOGI("finalize: short-circuit floor (pcm=%zu rate=%d notes=%zu)",
+                s ? s->pcm.size() : 0,
+                s ? s->sample_rate : 0,
+                (s && s->song) ? s->song->notes.size() : 0);
+        return 10;
+    }
+
+    // PCM peak/RMS so we can tell silent-mic vs real audio.
+    double peak = 0.0, sumsq = 0.0;
+    for (float v : s->pcm) {
+        double a = v < 0 ? -double(v) : double(v);
+        if (a > peak) peak = a;
+        sumsq += double(v) * double(v);
+    }
+    double rms = s->pcm.empty() ? 0.0 : std::sqrt(sumsq / s->pcm.size());
 
     auto frames = ss::detect_pitches(
         s->pcm.data(), int(s->pcm.size()), s->sample_rate);
-    auto per_note = ss::score_notes(s->song->notes, frames);
-    return ss::aggregate_score(s->song->notes, per_note);
+
+    size_t n_voiced = 0;
+    double first_voiced_ms = -1.0, last_voiced_ms = -1.0;
+    for (const auto& f : frames) {
+        if (f.voiced()) {
+            if (first_voiced_ms < 0) first_voiced_ms = f.time_ms;
+            last_voiced_ms = f.time_ms;
+            ++n_voiced;
+        }
+    }
+
+    const auto& notes = s->song->notes;
+    double first_note_start = notes.front().start_ms;
+    double first_note_end   = notes.front().end_ms;
+    double last_note_start  = notes.back().start_ms;
+    double last_note_end    = notes.back().end_ms;
+
+    auto per_note = ss::score_notes(notes, frames);
+    int  score    = ss::aggregate_score(notes, per_note);
+
+    SS_LOGI("finalize: pcm=%zu rate=%d durMs=%.0f peak=%.4f rms=%.4f "
+            "frames=%zu voiced=%zu voicedSpan=[%.0f..%.0f] "
+            "notes=%zu firstNote=[%.0f..%.0f] lastNote=[%.0f..%.0f] score=%d",
+            s->pcm.size(), s->sample_rate,
+            double(s->pcm.size()) * 1000.0 / s->sample_rate,
+            peak, rms,
+            frames.size(), n_voiced, first_voiced_ms, last_voiced_ms,
+            notes.size(), first_note_start, first_note_end,
+            last_note_start, last_note_end,
+            score);
+
+    return score;
 }
 
 extern "C" void ss_close(ss_session* s) {
@@ -64,4 +117,11 @@ extern "C" int ss_score(const char* zip_path,
     int score = ss_finalize_score(s);
     ss_close(s);
     return score;
+}
+
+extern "C" long long ss_melody_end_ms(const char* zip_path) {
+    if (!zip_path) return -1;
+    auto song = ss::load_song(zip_path);
+    if (!song || song->notes.empty()) return -1;
+    return static_cast<long long>(song->melody_end_ms());
 }

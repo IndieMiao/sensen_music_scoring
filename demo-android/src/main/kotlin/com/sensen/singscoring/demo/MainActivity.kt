@@ -237,8 +237,13 @@ class MainActivity : AppCompatActivity() {
         // so the user sees the splash render. 250 ms is enough for the eye.
         main.postDelayed({ if (state == State.COUNTDOWN) renderRecording(song) }, 250)
 
-        // Auto-stop a short tail past the last lyric line (or at 30 s if LRC is empty).
-        val tailMs = (lyrics.lastOrNull()?.timeMs ?: 30_000L) + 1500L
+        // Auto-stop a short tail past the last MIDI note — that's the scoring
+        // horizon. LRC can end well before the melody (or after), so using it
+        // here would truncate capture and drag the score to the [10,99] floor
+        // via uncovered notes. Fall back to a loose 60 s cap if the SDK can't
+        // tell us (unparseable MIDI → the session would return 10 anyway).
+        val melodyEndMs = stagedZipPath?.let { runCatching { SingScoringSession.melodyEndMs(it) }.getOrDefault(-1L) } ?: -1L
+        val tailMs = if (melodyEndMs > 0) melodyEndMs + 1500L else 60_000L
         autoStopRunnable = Runnable { if (state == State.RECORDING) finishAndScore() }
         main.postDelayed(autoStopRunnable!!, tailMs)
     }
@@ -260,6 +265,20 @@ class MainActivity : AppCompatActivity() {
             }
             out
         }
+
+        var peak = 0f
+        var sumsq = 0.0
+        for (v in flat) {
+            val a = if (v < 0f) -v else v
+            if (a > peak) peak = a
+            sumsq += v.toDouble() * v.toDouble()
+        }
+        val rms = if (flat.isNotEmpty()) kotlin.math.sqrt(sumsq / flat.size) else 0.0
+        val durMs = if (sampleRate > 0) flat.size.toLong() * 1000L / sampleRate else 0L
+        android.util.Log.i(
+            "ss-demo",
+            "pcm samples=${flat.size} rate=$sampleRate durMs=$durMs peak=$peak rms=${"%.4f".format(rms)}"
+        )
 
         thread(name = "ss-scoring", isDaemon = true) {
             val score = try {

@@ -42,6 +42,13 @@ NS_SWIFT_NAME(SingScoringSession)
                    sampleRate:(NSInteger)sampleRate
     NS_SWIFT_NAME(score(zipPath:samples:count:sampleRate:));
 
+/// Last reference-melody note end-time, in milliseconds from MIDI t=0.
+/// This is the scoring horizon — callers that auto-stop capture should use
+/// this, not the LRC's last line nor `duration` in the JSON metadata.
+/// Returns -1 on failure (unreadable zip, no parseable MIDI).
++ (int64_t)melodyEndMsForZipPath:(NSString *)zipPath
+    NS_SWIFT_NAME(melodyEndMs(zipPath:));
+
 @end
 
 NS_ASSUME_NONNULL_END

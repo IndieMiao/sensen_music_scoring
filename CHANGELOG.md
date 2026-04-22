@@ -3,7 +3,7 @@
 All notable changes to the SingScoring SDK will be recorded here.
 Versions follow [Semantic Versioning](https://semver.org/). Until **1.0.0**
 the C ABI may change between minor versions; from 1.0.0 onward, only a major
-bump may break the six functions declared in
+bump may break the seven functions declared in
 [`core/include/singscoring.h`](core/include/singscoring.h).
 
 ## 0.3.0 — 2026-04-22
@@ -13,6 +13,19 @@ bump may break the six functions declared in
   that opens, feeds, finalizes, and closes in a single call. Surfaced in
   Kotlin as `SingScoringSession.score(...)` (static) and in Obj-C as
   `+[SSCSession scoreWithZipPath:samples:count:sampleRate:]`.
+- `ss_melody_end_ms(zip_path)` — returns the last MIDI note's end time in
+  milliseconds (the scoring horizon). Surfaced as
+  `SingScoringSession.melodyEndMs(zipPath)` (Kotlin, static) and
+  `+[SSCSession melodyEndMsForZipPath:]` (Obj-C / Swift
+  `SingScoringSession.melodyEndMs(zipPath:)`). Returns -1 on failure.
+
+### Fixed
+- Demo auto-stop used the LRC's last line as the end of capture, which
+  truncated recording well before the melody finished on songs whose
+  lyrics stop earlier than the MIDI. Every uncovered note scored at the
+  0.1 floor, dragging the aggregate to ~19 regardless of performance.
+  The demo now uses `SingScoringSession.melodyEndMs(...)` for its
+  auto-stop horizon, matching the scoring-invariant in CLAUDE.md.
 
 ### Changed
 - The Android demo no longer plays a backing track. Flow is now

@@ -22,7 +22,7 @@ singscoring.h  (core/include/singscoring.h)
 core/src/*.cpp  — portable C++17, no platform deps
 ```
 
-Both bindings (Android JNI and iOS Obj-C++) talk to the core **only through the six functions in `singscoring.h`**: `ss_score` (one-shot, the standard path) plus the streaming quartet `ss_open / ss_feed_pcm / ss_finalize_score / ss_close` and `ss_version`. Never leak platform types (JNIEnv, NSString, file handles) into `core/`; never leak C++ types (`std::string`, templates) across the ABI boundary.
+Both bindings (Android JNI and iOS Obj-C++) talk to the core **only through the seven functions in `singscoring.h`**: `ss_score` (one-shot, the standard path) plus the streaming quartet `ss_open / ss_feed_pcm / ss_finalize_score / ss_close`, `ss_version`, and `ss_melody_end_ms` (scoring horizon — last MIDI note end, for UIs that auto-stop capture). Never leak platform types (JNIEnv, NSString, file handles) into `core/`; never leak C++ types (`std::string`, templates) across the ABI boundary.
 
 The Android AAR module lives at `bindings/android/` but is registered in Gradle as `:singscoring` (see `settings.gradle.kts`). Its `CMakeLists.txt` uses `add_subdirectory` to pull in `core/` — there is no second copy of the scoring code.
 

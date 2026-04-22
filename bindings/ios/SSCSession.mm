@@ -49,4 +49,9 @@
                     (int)sampleRate);
 }
 
++ (int64_t)melodyEndMsForZipPath:(NSString *)zipPath {
+    if (!zipPath) return -1;
+    return (int64_t)ss_melody_end_ms(zipPath.UTF8String);
+}
+
 @end

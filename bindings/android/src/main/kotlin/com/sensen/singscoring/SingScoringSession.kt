@@ -51,6 +51,15 @@ class SingScoringSession private constructor(private var handle: Long) : AutoClo
         val version: String get() = nativeVersion()
 
         /**
+         * Last reference-melody note end-time in milliseconds from MIDI t=0 —
+         * i.e., the scoring horizon. Callers that auto-stop capture should use
+         * this, not the LRC last-line time or `json.duration`. Returns -1 if
+         * the zip is unreadable or contains no parseable MIDI notes.
+         */
+        @JvmStatic
+        fun melodyEndMs(zipPath: String): Long = nativeMelodyEndMs(zipPath)
+
+        /**
          * One-shot scoring. Open the song zip, score [samples] (mono float32 at
          * [sampleRate] Hz) against the chorus MIDI, and release the session in a
          * single call. Returns a score in [10, 99]. The first sample is treated
@@ -76,5 +85,6 @@ class SingScoringSession private constructor(private var handle: Long) : AutoClo
         @JvmStatic private external fun nativeScore(
             zipPath: String, samples: FloatArray, count: Int, sampleRate: Int
         ): Int
+        @JvmStatic private external fun nativeMelodyEndMs(zipPath: String): Long
     }
 }

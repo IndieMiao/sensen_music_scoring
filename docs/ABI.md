@@ -1,6 +1,6 @@
 # SingScoring C ABI
 
-The entire public surface is the six functions in
+The entire public surface is the seven functions in
 [`core/include/singscoring.h`](../core/include/singscoring.h). Everything
 above the C boundary — JNI, the Kotlin `SingScoringSession`, the Obj-C
 `SSCSession`, its Swift alias — is a thin marshaller that must never touch
@@ -16,6 +16,9 @@ const char* ss_version(void);
 // One-shot — recommended path for app integrations.
 int         ss_score(const char* zip_path,
                      const float* samples, int n, int sample_rate);  // 10..99
+
+// Scoring horizon (last MIDI note end, ms). -1 on failure.
+long long   ss_melody_end_ms(const char* zip_path);
 ```
 
 ## One-shot scoring
@@ -28,6 +31,15 @@ when a lyrics scroll begins). Returns the same `[10, 99]` integer as
 integrations; the `open / feed_pcm / finalize_score / close` quartet is
 kept for advanced flows that need a session handle (chunked upload,
 pre-warming, parallel takes against one open session).
+
+## Scoring horizon
+
+`ss_melody_end_ms` returns the end time of the last MIDI note, in
+milliseconds from MIDI t=0. This is the correct value for callers that
+auto-stop capture — not `json.duration` (which is the MP3 length and
+typically longer than the melody) and not the LRC's last line (which can
+be shorter or longer than the melody depending on the song). Returns -1
+on failure.
 
 ## Lifecycle
 
@@ -58,7 +70,7 @@ pre-warming, parallel takes against one open session).
 
 - Pre-1.0 the ABI may change between minor versions. Check `ss_version()`
   against the matching `CHANGELOG.md` entry when integrating a new build.
-- From 1.0.0 onward only a major-version bump may break the six functions.
+- From 1.0.0 onward only a major-version bump may break the seven functions.
 
 ## What's *not* exposed
 
