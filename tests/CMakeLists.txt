@@ -11,6 +11,7 @@ FetchContent_MakeAvailable(googletest)
 add_executable(singscoring_tests
     test_version.cpp
     test_session.cpp
+    test_session_oneshot.cpp
     test_midi_parser.cpp
     test_lrc_parser.cpp
     test_json_parser.cpp
