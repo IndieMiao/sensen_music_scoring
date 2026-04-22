@@ -6,11 +6,11 @@ melody and returns an integer score in **[10, 99]** (pass ≥ 60).
 
 - **Android:** `singscoring.aar` (arm64-v8a, armeabi-v7a, x86_64) + Kotlin API.
 - **iOS:** `SingScoring.xcframework` (device + simulator) + Obj-C/Swift API.
-- **Demo APK:** plays the backing track via ExoPlayer, captures mic, shows score.
+- **Demo APK:** chorus singalong with scrolling lyrics; captures mic, scores in one call when the user stops.
 
 No network needed — songs are self-contained zip bundles.
 
-Current version: **0.2.0**. See [CHANGELOG.md](CHANGELOG.md) for what shipped.
+Current version: **0.3.0**. See [CHANGELOG.md](CHANGELOG.md) for what shipped.
 ABI reference: [docs/ABI.md](docs/ABI.md).
 
 ---
@@ -20,15 +20,11 @@ ABI reference: [docs/ABI.md](docs/ABI.md).
 ### Android
 
 ```kotlin
-// 1. Point at a .zip on disk (cache dir, downloaded file, asset-extract, etc.)
-val session = SingScoringSession.open(zipPath)
-
-// 2. From an AudioRecord(ENCODING_PCM_FLOAT) callback:
-session.feedPcm(floatBuffer, sampleRate = 44100, count = framesRead)
-
-// 3. When the user taps "stop":
-val score = session.finalizeScore()   // 10..99
-session.close()
+// Record the chorus into a FloatArray (mono float32, 44.1 kHz), then:
+val score = SingScoringSession.score(zipPath, samples, sampleRate = 44100)
+// score is in 10..99 (pass ≥ 60). Sample 0 is treated as MIDI t=0,
+// so start capture in sync with the chorus reference (e.g. when a
+// lyrics scroll begins).
 ```
 
 See [`demo-android/`](demo-android/) for an end-to-end example.
@@ -36,20 +32,29 @@ See [`demo-android/`](demo-android/) for an end-to-end example.
 ### iOS (Swift)
 
 ```swift
-guard let session = SingScoringSession(zipPath: zipURL.path) else {
-    fatalError("failed to open song zip")
-}
-
-// From an AVAudioEngine input tap:
-buffer.floatChannelData?[0].withMemoryRebound(to: Float.self, capacity: n) { ptr in
-    session.feedPCM(ptr, count: n, sampleRate: 44100)
-}
-
-let score = session.finalizeScore()
+let score = SingScoringSession.score(
+    zipPath: zipURL.path,
+    samples: pcmPointer,
+    count: pcmCount,
+    sampleRate: 44100
+)
+// score is in 10..99 (pass ≥ 60). PCM[0] == MIDI t=0.
 ```
 
 Build: `./scripts/build-ios-xcframework.sh` (macOS only). Full guide:
 [`bindings/ios/README.md`](bindings/ios/README.md).
+
+#### Advanced — streaming lifecycle
+
+For chunked upload, pre-warming, or parallel takes against one open session,
+the streaming quartet is still available:
+
+```kotlin
+val session = SingScoringSession.open(zipPath)
+session.feedPcm(floatBuffer, sampleRate = 44100, count = framesRead)  // call repeatedly
+val score = session.finalizeScore()
+session.close()
+```
 
 ---
 
@@ -59,7 +64,7 @@ Each song zip contains four files named after the song code:
 
 | File | Role |
 |---|---|
-| `[code]_chorus.mp3` | Backing track played while the user sings. |
+| `[code]_chorus.mp3` | Reference audio. Bundled for the SDK's MP3-based unit tests; the demo does **not** play it back. |
 | `[code]_chorus.mid` | Reference monophonic vocal melody. Sole scoring input. |
 | `[code]_chorus.lrc` | Lyrics — **display only**, never scored. |
 | `[code]_chorus.json` | `{songCode, name, singer, rhythm, duration}`. `duration` is the MP3 length, not the scoring horizon. |
