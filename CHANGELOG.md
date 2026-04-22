@@ -6,6 +6,22 @@ the C ABI may change between minor versions; from 1.0.0 onward, only a major
 bump may break the seven functions declared in
 [`core/include/singscoring.h`](core/include/singscoring.h).
 
+## 0.4.0 — 2026-04-22
+
+### Added
+- **Multi-dimension scoring.** `aggregate_score` / `ss_score` now combine four dimensions with fixed weights: pitch (50%), rhythm (20%), pitch-stability (15%), and completeness (15%). All signal is derived from existing YIN pitch frames — no new dependencies, no binary-size growth.
+- `ss::NoteScore` exposes per-note `pitch_score`, `rhythm_score`, `stability_score`, and `voiced_frames` fields.
+- `ss::SongScoreBreakdown` + `ss::compute_breakdown(...)` surface each dimension for debugging and future UIs.
+- `ss_finalize_score` logs the per-dimension breakdown alongside the final score (Android `logcat` tag `ss-core`).
+
+### Changed
+- `ss::NoteScore::score` renamed to `ss::NoteScore::pitch_score` for clarity. Internal-only struct — no C ABI impact.
+- A steady, on-time "wrong note" performance now scores ~55–65 instead of flooring at 10. Silence still floors near 18.
+
+### Notes
+- **Public C ABI unchanged.** `ss_score` still returns `int` in `[10, 99]`. The seven functions in `singscoring.h` are the same as 0.3.0.
+- Scoring weights and per-dimension thresholds are tunable in `core/src/scorer.cpp` — expect tuning passes after real-user logs accumulate.
+
 ## 0.3.0 — 2026-04-22
 
 ### Added

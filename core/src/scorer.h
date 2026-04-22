@@ -24,7 +24,7 @@ struct NoteScore {
 struct SongScoreBreakdown {
     float pitch        = 0.0f;   // duration-weighted avg of pitch_score
     float rhythm       = 0.0f;   // duration-weighted avg of rhythm_score
-    float stability    = 1.0f;   // duration-weighted avg of stability_score over notes with voiced_frames >= 2; 1.0 if none qualify
+    float stability    = 1.0f;   // duration-weighted avg of per-note stability_score (which is 0.1 when silent, 1.0 with <2 voiced frames, else based on stddev)
     float completeness = 0.0f;   // fraction of notes with voiced_frames >= 1
     float combined     = 0.0f;   // 0.50*pitch + 0.20*rhythm + 0.15*stability + 0.15*completeness
 };
