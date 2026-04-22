@@ -72,12 +72,12 @@ std::vector<NoteScore> score_notes(
 
         if (midi_vals.empty()) {
             ns.detected_midi = std::numeric_limits<float>::quiet_NaN();
-            ns.score         = 0.1f;
+            ns.pitch_score   = 0.1f;
         } else {
             std::sort(midi_vals.begin(), midi_vals.end());
             float med = midi_vals[midi_vals.size() / 2];
             ns.detected_midi = med;
-            ns.score         = semitone_error_to_score(med - float(note.pitch));
+            ns.pitch_score   = semitone_error_to_score(med - float(note.pitch));
         }
         out.push_back(ns);
     }
@@ -94,7 +94,7 @@ int aggregate_score(
     double num = 0.0, den = 0.0;
     for (size_t i = 0; i < ref_notes.size(); ++i) {
         double w = std::max(1.0, ref_notes[i].duration_ms());
-        num += w * per_note[i].score;
+        num += w * per_note[i].pitch_score;
         den += w;
     }
     double avg = (den > 0.0) ? (num / den) : 0.1;

@@ -40,7 +40,7 @@ TEST(Scorer, perfect_pitch_hits_max_score) {
     }
     auto per = ss::score_notes(notes, frames);
     ASSERT_EQ(per.size(), 1u);
-    EXPECT_NEAR(per[0].score, 1.0f, 0.01f);
+    EXPECT_NEAR(per[0].pitch_score, 1.0f, 0.01f);
 
     int agg = ss::aggregate_score(notes, per);
     EXPECT_GE(agg, 95);
@@ -55,7 +55,7 @@ TEST(Scorer, one_semitone_off_gets_mid_score) {
     auto per = ss::score_notes(notes, frames);
     ASSERT_EQ(per.size(), 1u);
     // err=1.0 → score = 1 - (0.5/2.5)*0.9 = 0.82
-    EXPECT_NEAR(per[0].score, 0.82f, 0.02f);
+    EXPECT_NEAR(per[0].pitch_score, 0.82f, 0.02f);
 }
 
 TEST(Scorer, way_off_pitch_hits_floor) {
@@ -66,7 +66,7 @@ TEST(Scorer, way_off_pitch_hits_floor) {
     }
     auto per = ss::score_notes(notes, frames);
     ASSERT_EQ(per.size(), 1u);
-    EXPECT_NEAR(per[0].score, 0.1f, 0.01f);
+    EXPECT_NEAR(per[0].pitch_score, 0.1f, 0.01f);
 
     int agg = ss::aggregate_score(notes, per);
     EXPECT_LE(agg, 25);
@@ -80,7 +80,7 @@ TEST(Scorer, unvoiced_user_gets_floor) {
     auto per = ss::score_notes(notes, frames);
     ASSERT_EQ(per.size(), 1u);
     EXPECT_TRUE(std::isnan(per[0].detected_midi));
-    EXPECT_NEAR(per[0].score, 0.1f, 0.01f);
+    EXPECT_NEAR(per[0].pitch_score, 0.1f, 0.01f);
 }
 
 TEST(Scorer, aggregate_is_duration_weighted) {
@@ -114,7 +114,7 @@ TEST(Scorer, score_range_is_valid) {
             frames.push_back(frame_at(t, midi_to_hz(midi)));
         }
         auto per = ss::score_notes(notes, frames);
-        EXPECT_GE(per[0].score, 0.1f) << "midi=" << midi;
-        EXPECT_LE(per[0].score, 1.0f) << "midi=" << midi;
+        EXPECT_GE(per[0].pitch_score, 0.1f) << "midi=" << midi;
+        EXPECT_LE(per[0].pitch_score, 1.0f) << "midi=" << midi;
     }
 }

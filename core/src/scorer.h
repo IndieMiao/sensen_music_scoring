@@ -10,11 +10,23 @@ namespace ss {
 
 // Per-note scoring result — kept around mostly for tests.
 struct NoteScore {
-    double start_ms;
-    double end_ms;
-    int    ref_pitch;      // reference MIDI
-    float  detected_midi;  // NaN if the user was unvoiced over this note
-    float  score;          // [0.1, 1.0]
+    double start_ms       = 0.0;
+    double end_ms         = 0.0;
+    int    ref_pitch      = 0;       // reference MIDI
+    float  detected_midi  = 0.0f;    // NaN if the user was unvoiced over this note
+    float  pitch_score    = 0.1f;    // [0.1, 1.0] — median-MIDI vs ref (was `score`)
+    float  rhythm_score   = 0.1f;    // [0.1, 1.0] — onset-offset penalty
+    float  stability_score= 1.0f;    // [0.1, 1.0] — pitch stddev; 1.0 if <2 voiced frames
+    int    voiced_frames  = 0;       // count of voiced YIN frames inside [start_ms, end_ms]
+};
+
+// Song-level aggregation of per-note scores, all in [0, 1].
+struct SongScoreBreakdown {
+    float pitch        = 0.0f;   // duration-weighted avg of pitch_score
+    float rhythm       = 0.0f;   // duration-weighted avg of rhythm_score
+    float stability    = 1.0f;   // duration-weighted avg of stability_score over notes with voiced_frames >= 2; 1.0 if none qualify
+    float completeness = 0.0f;   // fraction of notes with voiced_frames >= 1
+    float combined     = 0.0f;   // 0.50*pitch + 0.20*rhythm + 0.15*stability + 0.15*completeness
 };
 
 // Score a single performance against the reference notes.
@@ -24,7 +36,12 @@ std::vector<NoteScore> score_notes(
     const std::vector<Note>&       ref_notes,
     const std::vector<PitchFrame>& frames);
 
-// Aggregate per-note scores, duration-weighted, and map to the [10, 99] integer range.
+// Compute the four-dimension song breakdown from per-note scores.
+SongScoreBreakdown compute_breakdown(
+    const std::vector<Note>&      ref_notes,
+    const std::vector<NoteScore>& per_note);
+
+// Map the breakdown's `combined` field to the [10, 99] integer range.
 // An empty input (no reference notes) returns 10 (pass threshold is 60).
 int aggregate_score(
     const std::vector<Note>&      ref_notes,
