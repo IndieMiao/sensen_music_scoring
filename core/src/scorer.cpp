@@ -170,16 +170,9 @@ int aggregate_score(
 {
     if (ref_notes.empty() || per_note.size() != ref_notes.size()) return 10;
 
-    double num = 0.0, den = 0.0;
-    for (size_t i = 0; i < ref_notes.size(); ++i) {
-        double w = std::max(1.0, ref_notes[i].duration_ms());
-        num += w * per_note[i].pitch_score;
-        den += w;
-    }
-    double avg = (den > 0.0) ? (num / den) : 0.1;
+    SongScoreBreakdown b = compute_breakdown(ref_notes, per_note);
 
-    // Map [0, 1] → [10, 99]. Clamp for safety.
-    int s = int(std::round(10.0 + 89.0 * avg));
+    int s = int(std::round(10.0 + 89.0 * double(b.combined)));
     if (s < 10) s = 10;
     if (s > 99) s = 99;
     return s;

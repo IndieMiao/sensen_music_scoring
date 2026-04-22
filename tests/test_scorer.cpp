@@ -58,18 +58,17 @@ TEST(Scorer, one_semitone_off_gets_mid_score) {
     EXPECT_NEAR(per[0].pitch_score, 0.82f, 0.02f);
 }
 
-TEST(Scorer, way_off_pitch_hits_floor) {
+TEST(Scorer, way_off_pitch_per_note_hits_floor) {
     std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
     std::vector<ss::PitchFrame> frames;
     for (double t = 50.0; t < 1000.0; t += 10.0) {
-        frames.push_back(frame_at(t, midi_to_hz(75)));  // octave+ away
+        frames.push_back(frame_at(t, midi_to_hz(75)));
     }
     auto per = ss::score_notes(notes, frames);
     ASSERT_EQ(per.size(), 1u);
     EXPECT_NEAR(per[0].pitch_score, 0.1f, 0.01f);
-
-    int agg = ss::aggregate_score(notes, per);
-    EXPECT_LE(agg, 25);
+    // Aggregate expectation moved to Aggregate.steady_ontime_wrong_note_gets_partial_credit
+    // (a steady on-time wrong note now earns partial credit — no longer floors).
 }
 
 TEST(Scorer, unvoiced_user_gets_floor) {
@@ -84,19 +83,20 @@ TEST(Scorer, unvoiced_user_gets_floor) {
 }
 
 TEST(Scorer, aggregate_is_duration_weighted) {
-    // Two notes: one 100ms (wrong), one 1000ms (right). Long note should dominate.
     std::vector<ss::Note> notes = {
         {0.0,    100.0, 60},
         {100.0, 1100.0, 62},
     };
     std::vector<ss::NoteScore> per(2);
-    per[0] = {0.0,    100.0, 60, 72.0f, 0.1f};  // way off
-    per[1] = {100.0, 1100.0, 62, 62.0f, 1.0f};  // perfect
+    per[0] = {0.0,    100.0, 60, 72.0f, 0.1f, 1.0f, 1.0f, 0};   // pitch way off
+    per[1] = {100.0, 1100.0, 62, 62.0f, 1.0f, 1.0f, 1.0f, 0};   // pitch perfect
+    // rhythm_score=1.0, stability_score=1.0; voiced_frames=0 (completeness=0).
 
     int agg = ss::aggregate_score(notes, per);
-    // Weighted avg ≈ (100*0.1 + 1000*1.0) / 1100 ≈ 0.918 → 10 + 89*0.918 ≈ 92
-    EXPECT_GE(agg, 85);
-    EXPECT_LE(agg, 95);
+    // pitch avg ≈ 0.918; rhythm/stability=1.0; completeness=0 (voiced_frames==0)
+    // combined = 0.5*0.918 + 0.2*1.0 + 0.15*1.0 + 0.15*0 ≈ 0.809 → ~82
+    EXPECT_GE(agg, 78);
+    EXPECT_LE(agg, 86);
 }
 
 TEST(Scorer, empty_reference_returns_floor) {
@@ -323,4 +323,29 @@ TEST(Breakdown, empty_is_zero) {
     auto b = ss::compute_breakdown(notes, per);
     EXPECT_EQ(b.combined, 0.0f);
     EXPECT_EQ(b.completeness, 0.0f);
+}
+
+TEST(Aggregate, steady_ontime_wrong_note_gets_partial_credit) {
+    // A user confidently sings the wrong note steadily and on time.
+    // Old pitch-only scorer: ~10. New scorer: ~59.
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(75)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    int agg = ss::aggregate_score(notes, per);
+    EXPECT_GE(agg, 55);
+    EXPECT_LE(agg, 65);
+}
+
+TEST(Aggregate, silent_user_still_floors) {
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) frames.push_back(unvoiced_at(t));
+    auto per = ss::score_notes(notes, frames);
+    int agg = ss::aggregate_score(notes, per);
+    // pitch=0.1, rhythm=0.1, stability=0.1, completeness=0
+    //   → 0.5*0.1 + 0.2*0.1 + 0.15*0.1 + 0.15*0 = 0.085 → 10+89*0.085 ≈ 18
+    EXPECT_LE(agg, 20);
 }
