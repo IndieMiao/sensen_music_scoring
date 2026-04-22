@@ -126,6 +126,43 @@ std::vector<NoteScore> score_notes(
     return out;
 }
 
+SongScoreBreakdown compute_breakdown(
+    const std::vector<Note>&      ref_notes,
+    const std::vector<NoteScore>& per_note)
+{
+    SongScoreBreakdown b;
+    if (ref_notes.empty() || per_note.size() != ref_notes.size()) return b;
+
+    double pitch_num = 0.0, rhythm_num = 0.0, dur_den = 0.0;
+    double stab_num = 0.0, stab_den = 0.0;
+    int voiced_notes = 0;
+
+    for (size_t i = 0; i < ref_notes.size(); ++i) {
+        double w = std::max(1.0, ref_notes[i].duration_ms());
+        pitch_num  += w * per_note[i].pitch_score;
+        rhythm_num += w * per_note[i].rhythm_score;
+        dur_den    += w;
+
+        if (per_note[i].voiced_frames >= 2) {
+            stab_num += w * per_note[i].stability_score;
+            stab_den += w;
+        }
+        if (per_note[i].voiced_frames >= 1) {
+            ++voiced_notes;
+        }
+    }
+
+    b.pitch        = float(pitch_num  / dur_den);
+    b.rhythm       = float(rhythm_num / dur_den);
+    b.stability    = stab_den > 0.0 ? float(stab_num / stab_den) : 1.0f;
+    b.completeness = float(double(voiced_notes) / double(ref_notes.size()));
+    b.combined     = 0.50f * b.pitch
+                   + 0.20f * b.rhythm
+                   + 0.15f * b.stability
+                   + 0.15f * b.completeness;
+    return b;
+}
+
 int aggregate_score(
     const std::vector<Note>&      ref_notes,
     const std::vector<NoteScore>& per_note)

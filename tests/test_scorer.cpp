@@ -240,3 +240,69 @@ TEST(Scorer, stability_zero_voiced_is_floor) {
     EXPECT_EQ(per[0].voiced_frames, 0);
     EXPECT_NEAR(per[0].stability_score, 0.1f, 0.01f);
 }
+
+TEST(Breakdown, pitch_is_duration_weighted) {
+    std::vector<ss::Note> notes = {
+        {0.0,    100.0, 60},
+        {100.0, 1100.0, 62},
+    };
+    std::vector<ss::NoteScore> per(2);
+    per[0] = {0.0,    100.0, 60, 72.0f, 0.1f, 1.0f, 1.0f, 5};
+    per[1] = {100.0, 1100.0, 62, 62.0f, 1.0f, 1.0f, 1.0f, 50};
+
+    auto b = ss::compute_breakdown(notes, per);
+    // (100*0.1 + 1000*1.0) / 1100 ≈ 0.918
+    EXPECT_NEAR(b.pitch, 0.918f, 0.01f);
+}
+
+TEST(Breakdown, stability_skips_notes_with_few_voiced_frames) {
+    std::vector<ss::Note> notes = {
+        {0.0,    100.0, 60},
+        {100.0, 1100.0, 62},
+    };
+    std::vector<ss::NoteScore> per(2);
+    per[0] = {0.0,    100.0, 60, 60.0f, 1.0f, 1.0f, 1.0f, 1};   // <2 voiced → skipped
+    per[1] = {100.0, 1100.0, 62, 62.0f, 1.0f, 1.0f, 0.4f, 50};  // counted
+
+    auto b = ss::compute_breakdown(notes, per);
+    EXPECT_NEAR(b.stability, 0.4f, 0.01f);
+}
+
+TEST(Breakdown, completeness_is_voiced_fraction) {
+    std::vector<ss::Note> notes = {
+        {0.0,   100.0, 60},
+        {100.0, 200.0, 62},
+        {200.0, 300.0, 64},
+        {300.0, 400.0, 65},
+    };
+    std::vector<ss::NoteScore> per(4);
+    per[0] = {  0.0, 100.0, 60, 60.0f, 1.0f, 1.0f, 1.0f, 10};
+    per[1] = {100.0, 200.0, 62,  0.0f, 0.1f, 0.1f, 0.1f,  0};
+    per[2] = {200.0, 300.0, 64, 64.0f, 1.0f, 1.0f, 1.0f, 10};
+    per[3] = {300.0, 400.0, 65,  0.0f, 0.1f, 0.1f, 0.1f,  0};
+
+    auto b = ss::compute_breakdown(notes, per);
+    EXPECT_NEAR(b.completeness, 0.5f, 0.001f);
+}
+
+TEST(Breakdown, combined_follows_weights) {
+    // All dims = 1.0 → combined = 1.0
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::NoteScore> per(1);
+    per[0] = {0.0, 1000.0, 60, 60.0f, 1.0f, 1.0f, 1.0f, 50};
+    auto b = ss::compute_breakdown(notes, per);
+    EXPECT_NEAR(b.combined, 1.0f, 0.001f);
+
+    // pitch=0.1, others=1.0 → 0.5*0.1 + 0.2*1.0 + 0.15*1.0 + 0.15*1.0 = 0.55
+    per[0] = {0.0, 1000.0, 60, 75.0f, 0.1f, 1.0f, 1.0f, 50};
+    b = ss::compute_breakdown(notes, per);
+    EXPECT_NEAR(b.combined, 0.55f, 0.01f);
+}
+
+TEST(Breakdown, empty_is_zero) {
+    std::vector<ss::Note> notes;
+    std::vector<ss::NoteScore> per;
+    auto b = ss::compute_breakdown(notes, per);
+    EXPECT_EQ(b.combined, 0.0f);
+    EXPECT_EQ(b.completeness, 0.0f);
+}
