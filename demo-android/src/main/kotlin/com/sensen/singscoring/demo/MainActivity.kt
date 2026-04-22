@@ -60,6 +60,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        main.removeCallbacksAndMessages(null)
         cancelAutoStop()
         recorder?.stop(); recorder = null
     }
@@ -308,9 +309,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun toastLike(msg: String) {
         android.util.Log.w("SingScoringDemo", msg)
-        TextView(this).apply {
-            text = msg
-            setTextColor(Color.parseColor("#C62828"))
-        }.also { root.addView(it) }
+        android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show()
     }
 }
