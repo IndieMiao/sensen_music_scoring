@@ -182,6 +182,70 @@ class MainActivity : AppCompatActivity() {
         root.addView(col)
     }
 
+    private fun startPreview(song: SongAssets.Song) {
+        val staged = try {
+            SongAssets.stage(this, song)
+        } catch (e: Exception) {
+            toastLike("Failed to stage song: ${e.message}")
+            return
+        }
+        stagedZipPath = staged.zipPath
+        lyrics = readLyrics(staged.zipPath, song.code)
+
+        try {
+            val mp = android.media.MediaPlayer().apply {
+                setDataSource(staged.mp3Path)
+                prepare()
+                start()
+            }
+            mediaPlayer = mp
+        } catch (e: Exception) {
+            toastLike("Preview unavailable: ${e.message}")
+            startCountdown(song)
+            return
+        }
+
+        renderPreview(song)
+
+        previewAutoAdvance = Runnable { stopPreviewAndCountdown(song) }
+        main.postDelayed(previewAutoAdvance!!, 13_000L)
+    }
+
+    private fun renderPreview(song: SongAssets.Song) {
+        state = State.PREVIEW
+        root.removeAllViews()
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        }
+        col.addView(titleView("🎵  ${song.displayName}"))
+        col.addView(subtitleView("Listen to the chorus…"))
+
+        val view = LyricsScrollView(this).apply {
+            setLines(lyrics)
+            setClock { mediaPlayer?.currentPosition?.toLong() ?: 0L }
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f)
+                .apply { topMargin = 16; bottomMargin = 16 }
+        }
+        col.addView(view)
+
+        col.addView(Button(this).apply {
+            text = "Skip →"
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+            setOnClickListener { stopPreviewAndCountdown(song) }
+        })
+        root.addView(col)
+    }
+
+    private fun stopPreviewAndCountdown(song: SongAssets.Song) {
+        previewAutoAdvance?.let { main.removeCallbacks(it) }
+        previewAutoAdvance = null
+        mediaPlayer?.stop()
+        mediaPlayer?.release()
+        mediaPlayer = null
+        startCountdown(song)
+    }
+
     // --- flow --------------------------------------------------------------
 
     private fun onSongPicked(song: SongAssets.Song) {
