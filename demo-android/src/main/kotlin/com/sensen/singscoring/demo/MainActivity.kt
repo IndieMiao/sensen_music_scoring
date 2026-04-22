@@ -49,7 +49,7 @@ class MainActivity : AppCompatActivity() {
     private val requestMicPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) pendingSong?.let { startCountdown(it) }
+        if (granted) pendingSong?.let { startPreview(it) }
         else toastLike("Microphone permission denied")
     }
 
@@ -65,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         main.removeCallbacksAndMessages(null)
         cancelAutoStop()
         recorder?.stop(); recorder = null
+        mediaPlayer?.release(); mediaPlayer = null
     }
 
     // --- screens -----------------------------------------------------------
@@ -253,7 +254,7 @@ class MainActivity : AppCompatActivity() {
         val granted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
-        if (granted) startCountdown(song) else requestMicPermission.launch(Manifest.permission.RECORD_AUDIO)
+        if (granted) startPreview(song) else requestMicPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
     private fun startCountdown(song: SongAssets.Song) {
