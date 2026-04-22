@@ -50,10 +50,31 @@ class SingScoringSession private constructor(private var handle: Long) : AutoClo
         /** SDK version, e.g. "0.1.0". */
         val version: String get() = nativeVersion()
 
+        /**
+         * One-shot scoring. Open the song zip, score [samples] (mono float32 at
+         * [sampleRate] Hz) against the chorus MIDI, and release the session in a
+         * single call. Returns a score in [10, 99]. The first sample is treated
+         * as MIDI t=0 — caller starts capture in sync with the lyrics scroll.
+         */
+        @JvmStatic
+        fun score(
+            zipPath: String,
+            samples: FloatArray,
+            sampleRate: Int,
+            count: Int = samples.size
+        ): Int {
+            require(count in 0..samples.size) { "count=$count out of range [0, ${samples.size}]" }
+            if (count == 0) return 10
+            return nativeScore(zipPath, samples, count, sampleRate)
+        }
+
         @JvmStatic private external fun nativeOpen(zipPath: String): Long
         @JvmStatic private external fun nativeFeedPcm(handle: Long, samples: FloatArray, count: Int, sampleRate: Int)
         @JvmStatic private external fun nativeFinalize(handle: Long): Int
         @JvmStatic private external fun nativeClose(handle: Long)
         @JvmStatic private external fun nativeVersion(): String
+        @JvmStatic private external fun nativeScore(
+            zipPath: String, samples: FloatArray, count: Int, sampleRate: Int
+        ): Int
     }
 }

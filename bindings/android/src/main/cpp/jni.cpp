@@ -49,4 +49,26 @@ Java_com_sensen_singscoring_SingScoringSession_nativeVersion(JNIEnv* env, jclass
     return env->NewStringUTF(ss_version());
 }
 
+JNIEXPORT jint JNICALL
+Java_com_sensen_singscoring_SingScoringSession_nativeScore(
+        JNIEnv* env, jclass, jstring zipPath,
+        jfloatArray samples, jint count, jint sampleRate) {
+    if (!zipPath) return 10;
+    const char* path = env->GetStringUTFChars(zipPath, nullptr);
+    int score = 10;
+    if (samples && count > 0) {
+        jsize len = env->GetArrayLength(samples);
+        if (count > len) count = len;
+        jfloat* data = env->GetFloatArrayElements(samples, nullptr);
+        score = ss_score(path, data, static_cast<int>(count), static_cast<int>(sampleRate));
+        env->ReleaseFloatArrayElements(samples, data, JNI_ABORT);
+    } else {
+        // Empty PCM still goes through ss_score so error semantics stay identical
+        // (open succeeds → feed no-ops → finalize returns 10).
+        score = ss_score(path, nullptr, 0, static_cast<int>(sampleRate));
+    }
+    env->ReleaseStringUTFChars(zipPath, path);
+    return score;
+}
+
 } // extern "C"
