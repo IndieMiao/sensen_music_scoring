@@ -166,10 +166,11 @@ std::vector<NoteScore> score_notes(
         }
 
         NoteScore ns;
-        ns.start_ms      = note.start_ms;
-        ns.end_ms        = note.end_ms;
-        ns.ref_pitch     = note.pitch;
-        ns.voiced_frames = int(midi_vals.size());
+        ns.start_ms        = note.start_ms;
+        ns.end_ms          = note.end_ms;
+        ns.ref_pitch       = note.pitch;
+        ns.voiced_frames   = int(midi_vals.size());
+        ns.first_voiced_ms = first_voiced_ms;   // -1.0 if no voiced frame; otherwise first voiced ms
 
         if (midi_vals.empty()) {
             ns.detected_midi   = std::numeric_limits<float>::quiet_NaN();

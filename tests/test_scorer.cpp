@@ -622,3 +622,26 @@ TEST(Aggregate, silent_user_still_floors) {
     //   → 0.40*0.1 + 0.25*0.1 + 0.15*0.1 + 0.20*0 = 0.080 → 10+89*0.080 ≈ 17
     EXPECT_LE(agg, 20);
 }
+
+TEST(Scorer, note_score_retains_first_voiced_ms) {
+    std::vector<ss::Note> notes = {{1000.0, 2000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    frames.push_back(unvoiced_at(500.0));
+    frames.push_back(unvoiced_at(1100.0));
+    frames.push_back(frame_at(1250.0, midi_to_hz(60)));
+    frames.push_back(frame_at(1500.0, midi_to_hz(60)));
+
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].first_voiced_ms, 1250.0, 0.01);
+}
+
+TEST(Scorer, note_score_first_voiced_ms_is_minus_one_when_silent) {
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    frames.push_back(unvoiced_at(500.0));
+
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_DOUBLE_EQ(per[0].first_voiced_ms, -1.0);
+}

@@ -10,14 +10,15 @@ namespace ss {
 
 // Per-note scoring result — kept around mostly for tests.
 struct NoteScore {
-    double start_ms       = 0.0;
-    double end_ms         = 0.0;
-    int    ref_pitch      = 0;       // reference MIDI
-    float  detected_midi  = 0.0f;    // NaN if the user was unvoiced over this note
-    float  pitch_score    = 0.1f;    // [0.1, 1.0] — median-MIDI vs ref (was `score`)
-    float  rhythm_score   = 0.1f;    // [0.1, 1.0] — onset-offset penalty
-    float  stability_score= 1.0f;    // [0.1, 1.0] — pitch stddev; 1.0 if <2 voiced frames
-    int    voiced_frames  = 0;       // count of voiced YIN frames inside [start_ms, end_ms]
+    double start_ms        = 0.0;
+    double end_ms          = 0.0;
+    int    ref_pitch       = 0;       // reference MIDI
+    float  detected_midi   = 0.0f;    // NaN if the user was unvoiced over this note
+    float  pitch_score     = 0.1f;    // [0.1, 1.0] — median-MIDI vs ref (was `score`)
+    float  rhythm_score    = 0.1f;    // [0.1, 1.0] — onset-offset penalty
+    float  stability_score = 1.0f;    // [0.1, 1.0] — pitch stddev; 1.0 if <2 voiced frames
+    int    voiced_frames   = 0;       // count of voiced YIN frames inside [start_ms, end_ms]
+    double first_voiced_ms = -1.0;    // first voiced frame time inside window; -1 if none
 };
 
 // Song-level aggregation of per-note scores, all in [0, 1].
