@@ -566,6 +566,45 @@ TEST(Aggregate, steady_ontime_wrong_note_drops_below_pass) {
     EXPECT_LE(agg, 60);
 }
 
+TEST(Aggregate, monotone_reader_against_varied_melody_fails) {
+    // End-to-end regression for the bug that motivated the branch: a user
+    // reading lyrics at a single held pitch over a melody that actually varies
+    // used to score ~70 (passing) because stability rewarded their constant
+    // pitch and fmod-folded pitch errors gave coincidental credit. The three
+    // coordinated fixes (stability gate, narrow octave window, pitch-variance
+    // multiplier) should together drag the score well below the 60 pass
+    // threshold. Exercises score_notes → compute_breakdown → aggregate_score
+    // in a single integration.
+    const int kNotes = 8;
+    std::vector<ss::Note> notes;
+    for (int i = 0; i < kNotes; ++i) {
+        // Reference melody spans MIDI 60..67 (one note per 500ms), stddev ≈ 2.3
+        notes.push_back({double(i * 500), double((i + 1) * 500), 60 + i});
+    }
+    // User holds MIDI 63 (middle of the ref span) across the entire performance.
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < double(kNotes) * 500.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(63)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), size_t(kNotes));
+
+    // Per-note pitch_scores vary with |ref - 63|: notes 60..67 give errors
+    // -3..+4, all below the 6-st threshold, so the in-octave curve applies.
+    // Most notes score 0.1 or small partial credit; only ref=62,63,64 clear
+    // the 0.5 gate. For every gated note, stability is floored at 0.1.
+
+    // After compute_breakdown: user_sd = 0 (all detected = 63), ref_sd ≈ 2.3
+    // (above the 2.0 drone threshold) → variance multiplier = 0.3.
+    int agg = ss::aggregate_score(notes, per);
+
+    // Regression target: score should land below the 60 pass threshold, and
+    // should be noticeably lower than an ungated-stability + unfolded-octave
+    // pipeline would have produced (old code would score this ≈ 65-72).
+    EXPECT_LT(agg, 60) << "monotone reader must fail the 60 pass threshold";
+    EXPECT_GT(agg, 10) << "not full floor (rhythm + completeness give some credit)";
+}
+
 TEST(Aggregate, silent_user_still_floors) {
     std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
     std::vector<ss::PitchFrame> frames;
