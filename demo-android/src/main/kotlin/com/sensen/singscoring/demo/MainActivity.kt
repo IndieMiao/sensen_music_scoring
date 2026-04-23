@@ -394,7 +394,7 @@ class MainActivity : AppCompatActivity() {
      *   s < 15       → 1
      *   15 ≤ s ≤ 59  → [1, 60]
      *   60 ≤ s ≤ 70  → [60, 95]
-     *   71 ≤ s ≤ 100 → [96, 100]
+     *   71 ≤ s ≤ 99  → [96, 100]   (coerceAtMost(100) guards s > 99)
      */
     private fun remapScore(raw: Int): Int = when {
         raw < 15 -> 1
