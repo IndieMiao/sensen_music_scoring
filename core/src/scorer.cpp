@@ -63,8 +63,9 @@ float semitone_error_to_score(float err) {
         float t = (abs_err - 1.0f) / (4.0f - 1.0f);
         return 1.0f - t * (1.0f - 0.1f);
     }
+    // std::round is half-away-from-zero in C++17, so the minimum abs_err=6
+    // rounds up (round(0.5)=1) and nearest_octave is always >= 12.0 here.
     float nearest_octave = std::round(abs_err / 12.0f) * 12.0f;
-    if (nearest_octave < 12.0f) return 0.1f;
     float octave_err = std::fabs(abs_err - nearest_octave);
     if (octave_err <= 1.0f) return 1.0f;
     if (octave_err >= 2.5f) return 0.1f;
