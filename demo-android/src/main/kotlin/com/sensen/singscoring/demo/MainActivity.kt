@@ -114,6 +114,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderPickerError(message: String) {
+        state = State.PICKER
         root.removeAllViews()
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -437,6 +438,7 @@ class MainActivity : AppCompatActivity() {
         // Drop any in-flight background result that posts back after we leave.
         scoringGeneration++
         downloadGeneration++
+        catalogGeneration++
 
         renderPicker()
     }
