@@ -282,6 +282,8 @@ std::vector<Note> clip_notes_to_duration(
 {
     std::vector<Note> out;
     out.reserve(notes.size());
+    // `break` relies on `notes` being sorted by start_ms (MIDI parser
+    // invariant). If that ever stops holding, switch to `continue`.
     for (const auto& n : notes) {
         if (n.start_ms > end_ms_horizon) break;
         out.push_back(n);

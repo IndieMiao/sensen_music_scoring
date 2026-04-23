@@ -691,3 +691,14 @@ TEST(ClipNotes, empty_input_returns_empty) {
     auto clipped = ss::clip_notes_to_duration(notes, 1000.0);
     EXPECT_TRUE(clipped.empty());
 }
+
+TEST(ClipNotes, horizon_exactly_on_note_start_is_kept) {
+    // Predicate is start_ms <= horizon. Pins the boundary so an accidental
+    // flip to `>=` on the drop-check would get caught.
+    std::vector<ss::Note> notes = {
+        {   0.0,  500.0, 60},
+        {1000.0, 1500.0, 62},
+    };
+    auto clipped = ss::clip_notes_to_duration(notes, 1000.0);
+    ASSERT_EQ(clipped.size(), 2u);
+}

@@ -66,6 +66,8 @@ int aggregate_score(
 // Return the sub-range of `notes` whose start_ms <= end_ms_horizon.
 // A note that straddles the horizon (start inside, end outside) is kept
 // unchanged. An empty input or a horizon before any note returns empty.
+// Precondition: `notes` must be sorted by start_ms ascending (the
+// invariant produced by the MIDI parser).
 std::vector<Note> clip_notes_to_duration(
     const std::vector<Note>& notes,
     double                   end_ms_horizon);
