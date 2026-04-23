@@ -46,6 +46,11 @@ class MainActivity : AppCompatActivity() {
     private var previewAutoAdvance: Runnable? = null
     private var scoringGeneration = 0
 
+    // Result-screen toggle: true = show the UI-level remapped score, false = show raw.
+    // Resets to true on every new result / return to picker.
+    private var showRemapped: Boolean = true
+    private var lastRawScore: Int = -1
+
     private val root by lazy { FrameLayout(this) }
 
     private val requestMicPermission = registerForActivityResult(
@@ -157,6 +162,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderResult(song: SongAssets.Song, score: Int) {
         state = State.RESULT
+        lastRawScore = score
+        showRemapped = true   // Each new result starts on the remapped view.
+        drawResultBody(song)
+    }
+
+    private fun drawResultBody(song: SongAssets.Song) {
         root.removeAllViews()
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -165,9 +176,15 @@ class MainActivity : AppCompatActivity() {
         }
         col.addView(titleView(song.displayName))
 
-        val passed = score >= 60
+        val raw = lastRawScore
+        val displayed = if (showRemapped) remapScore(raw) else raw
+        // Pass/fail follows the displayed number: 60 is the pass line on both
+        // scales. Note: raw=59 remaps to 60, so toggling a 59 flips red↔green
+        // — acceptable per the spec.
+        val passed = displayed >= 60
+
         col.addView(TextView(this).apply {
-            text = score.toString()
+            text = displayed.toString()
             textSize = 96f
             setTextColor(if (passed) Color.parseColor("#2E7D32") else Color.parseColor("#C62828"))
             gravity = Gravity.CENTER
@@ -177,9 +194,19 @@ class MainActivity : AppCompatActivity() {
         col.addView(subtitleView(if (passed) "Passed" else "Needs work (pass ≥ 60)"))
 
         col.addView(Button(this).apply {
+            text = if (showRemapped) "Show raw score" else "Show new score"
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                .apply { topMargin = 32 }
+            setOnClickListener {
+                showRemapped = !showRemapped
+                drawResultBody(song)
+            }
+        })
+
+        col.addView(Button(this).apply {
             text = "Pick another song"
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-                .apply { topMargin = 64 }
+                .apply { topMargin = 32 }
             setOnClickListener { renderPicker() }
         })
         root.addView(col)
@@ -381,6 +408,9 @@ class MainActivity : AppCompatActivity() {
 
         // Drop any in-flight native scoring result that posts back after we leave.
         scoringGeneration++
+
+        lastRawScore = -1
+        showRemapped = true
 
         renderPicker()
     }
