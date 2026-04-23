@@ -90,6 +90,16 @@ std::vector<Note> clip_notes_to_duration(
 // invariant produced by the MIDI parser).
 std::vector<Segment> derive_phrase_segments(const std::vector<Note>& notes);
 
+// Estimate a time offset (tau) per segment from the median of per-note
+// onset deltas in pass-1 scoring. Segments with fewer than 2 voiced notes
+// inherit from the nearest neighbor (previous if available, else next,
+// else 0). Each tau is clamped to ±kMaxSegmentOffsetMs. The returned
+// vector has the same size as `segments`.
+std::vector<double> estimate_segment_offsets(
+    const std::vector<Segment>&   segments,
+    const std::vector<Note>&      notes,
+    const std::vector<NoteScore>& pass1);
+
 } // namespace ss
 
 #endif

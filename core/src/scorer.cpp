@@ -307,4 +307,60 @@ std::vector<Segment> derive_phrase_segments(const std::vector<Note>& notes) {
     return out;
 }
 
+std::vector<double> estimate_segment_offsets(
+    const std::vector<Segment>&   segments,
+    const std::vector<Note>&      notes,
+    const std::vector<NoteScore>& pass1)
+{
+    std::vector<double> tau(segments.size(), 0.0);
+    if (segments.empty()) return tau;
+
+    // Phase 1: raw per-segment estimate from median of onset deltas.
+    // Segments with <2 voiced notes get NaN as a sentinel for "inherit later".
+    const double kNan = std::numeric_limits<double>::quiet_NaN();
+    for (std::size_t s = 0; s < segments.size(); ++s) {
+        std::vector<double> deltas;
+        deltas.reserve(segments[s].end_idx - segments[s].begin_idx);
+        for (std::size_t j = segments[s].begin_idx; j < segments[s].end_idx; ++j) {
+            if (j >= pass1.size() || j >= notes.size()) continue;
+            if (pass1[j].voiced_frames >= 1 && pass1[j].first_voiced_ms >= 0.0) {
+                deltas.push_back(pass1[j].first_voiced_ms - notes[j].start_ms);
+            }
+        }
+        if (deltas.size() < 2) {
+            tau[s] = kNan;
+        } else {
+            std::sort(deltas.begin(), deltas.end());
+            double med = deltas[deltas.size() / 2];
+            if (med >  kMaxSegmentOffsetMs) med =  kMaxSegmentOffsetMs;
+            if (med < -kMaxSegmentOffsetMs) med = -kMaxSegmentOffsetMs;
+            tau[s] = med;
+        }
+    }
+
+    // Phase 2: fill NaNs by inheriting from the previous valid tau.
+    double last_valid = 0.0;
+    bool   have_last  = false;
+    for (std::size_t s = 0; s < tau.size(); ++s) {
+        if (!std::isnan(tau[s])) {
+            last_valid = tau[s];
+            have_last  = true;
+        } else if (have_last) {
+            tau[s] = last_valid;
+        }
+    }
+
+    // Phase 3: back-fill any leading NaNs from the nearest forward valid tau.
+    for (std::size_t s = 0; s < tau.size(); ++s) {
+        if (std::isnan(tau[s])) {
+            double forward = 0.0;
+            for (std::size_t k = s + 1; k < tau.size(); ++k) {
+                if (!std::isnan(tau[k])) { forward = tau[k]; break; }
+            }
+            tau[s] = forward;
+        }
+    }
+    return tau;
+}
+
 } // namespace ss

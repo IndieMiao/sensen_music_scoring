@@ -767,3 +767,141 @@ TEST(PhraseSegments, multiple_gaps_produce_multiple_segments) {
     EXPECT_EQ(segs[1].end_idx - segs[1].begin_idx, 2u);
     EXPECT_EQ(segs[2].end_idx - segs[2].begin_idx, 1u);
 }
+
+namespace {
+
+// Helper: synthesize pass1 NoteScore entries with a desired
+// first_voiced_ms per note. Only the fields that matter for the
+// offset estimator are populated.
+ss::NoteScore pass1_note(double start_ms, double end_ms, double first_voiced_ms) {
+    ss::NoteScore ns;
+    ns.start_ms        = start_ms;
+    ns.end_ms          = end_ms;
+    ns.first_voiced_ms = first_voiced_ms;
+    ns.voiced_frames   = (first_voiced_ms >= 0.0) ? 3 : 0;
+    ns.detected_midi   = (first_voiced_ms >= 0.0) ? 60.0f
+                                                  : std::numeric_limits<float>::quiet_NaN();
+    return ns;
+}
+
+} // namespace
+
+TEST(EstimateOffsets, uniform_lag_produces_uniform_tau) {
+    // Two segments, each with 3 notes, user is 500ms late throughout.
+    std::vector<ss::Note> notes = {
+        {   0.0,  300.0, 60}, { 300.0,  600.0, 62}, { 600.0,  900.0, 64},
+        {2000.0, 2300.0, 60}, {2300.0, 2600.0, 62}, {2600.0, 2900.0, 64},
+    };
+    std::vector<ss::Segment> segs = {{0, 3}, {3, 6}};
+    std::vector<ss::NoteScore> pass1 = {
+        pass1_note(   0.0,  300.0,  500.0),
+        pass1_note( 300.0,  600.0,  800.0),
+        pass1_note( 600.0,  900.0, 1100.0),
+        pass1_note(2000.0, 2300.0, 2500.0),
+        pass1_note(2300.0, 2600.0, 2800.0),
+        pass1_note(2600.0, 2900.0, 3100.0),
+    };
+    auto tau = ss::estimate_segment_offsets(segs, notes, pass1);
+    ASSERT_EQ(tau.size(), 2u);
+    EXPECT_NEAR(tau[0], 500.0, 0.01);
+    EXPECT_NEAR(tau[1], 500.0, 0.01);
+}
+
+TEST(EstimateOffsets, segment_with_fewer_than_two_voiced_notes_inherits_previous) {
+    // Segment 0 has valid τ; segment 1 has no voiced notes — inherits from 0.
+    std::vector<ss::Note> notes = {
+        {0.0, 300.0, 60}, {300.0, 600.0, 62},
+        {2000.0, 2300.0, 60}, {2300.0, 2600.0, 62},
+    };
+    std::vector<ss::Segment> segs = {{0, 2}, {2, 4}};
+    std::vector<ss::NoteScore> pass1 = {
+        pass1_note(   0.0,  300.0,  200.0),   // lag 200
+        pass1_note( 300.0,  600.0,  500.0),   // lag 200
+        pass1_note(2000.0, 2300.0, -1.0),     // silent
+        pass1_note(2300.0, 2600.0, -1.0),     // silent
+    };
+    auto tau = ss::estimate_segment_offsets(segs, notes, pass1);
+    ASSERT_EQ(tau.size(), 2u);
+    EXPECT_NEAR(tau[0], 200.0, 0.01);
+    EXPECT_NEAR(tau[1], 200.0, 0.01);
+}
+
+TEST(EstimateOffsets, leading_silent_segment_inherits_from_next) {
+    std::vector<ss::Note> notes = {
+        {0.0, 300.0, 60}, {300.0, 600.0, 62},
+        {2000.0, 2300.0, 60}, {2300.0, 2600.0, 62},
+    };
+    std::vector<ss::Segment> segs = {{0, 2}, {2, 4}};
+    std::vector<ss::NoteScore> pass1 = {
+        pass1_note(   0.0,  300.0, -1.0),
+        pass1_note( 300.0,  600.0, -1.0),
+        pass1_note(2000.0, 2300.0, 2250.0),   // lag 250
+        pass1_note(2300.0, 2600.0, 2550.0),   // lag 250
+    };
+    auto tau = ss::estimate_segment_offsets(segs, notes, pass1);
+    ASSERT_EQ(tau.size(), 2u);
+    EXPECT_NEAR(tau[0], 250.0, 0.01);
+    EXPECT_NEAR(tau[1], 250.0, 0.01);
+}
+
+TEST(EstimateOffsets, all_segments_silent_returns_zero) {
+    std::vector<ss::Note> notes = {
+        {0.0, 300.0, 60}, {300.0, 600.0, 62},
+    };
+    std::vector<ss::Segment> segs = {{0, 2}};
+    std::vector<ss::NoteScore> pass1 = {
+        pass1_note(0.0, 300.0, -1.0),
+        pass1_note(300.0, 600.0, -1.0),
+    };
+    auto tau = ss::estimate_segment_offsets(segs, notes, pass1);
+    ASSERT_EQ(tau.size(), 1u);
+    EXPECT_NEAR(tau[0], 0.0, 0.01);
+}
+
+TEST(EstimateOffsets, clamps_at_positive_max) {
+    std::vector<ss::Note> notes = {
+        {0.0, 300.0, 60}, {300.0, 600.0, 62},
+    };
+    std::vector<ss::Segment> segs = {{0, 2}};
+    std::vector<ss::NoteScore> pass1 = {
+        pass1_note(  0.0, 300.0, 3000.0),   // raw lag = 3000 (clamped to 1500)
+        pass1_note(300.0, 600.0, 3300.0),
+    };
+    auto tau = ss::estimate_segment_offsets(segs, notes, pass1);
+    ASSERT_EQ(tau.size(), 1u);
+    EXPECT_NEAR(tau[0], 1500.0, 0.01);
+}
+
+TEST(EstimateOffsets, clamps_at_negative_max) {
+    std::vector<ss::Note> notes = {
+        {5000.0, 5300.0, 60}, {5300.0, 5600.0, 62},
+    };
+    std::vector<ss::Segment> segs = {{0, 2}};
+    std::vector<ss::NoteScore> pass1 = {
+        pass1_note(5000.0, 5300.0, 2000.0),  // raw lag = -3000 (clamped to -1500)
+        pass1_note(5300.0, 5600.0, 2300.0),
+    };
+    auto tau = ss::estimate_segment_offsets(segs, notes, pass1);
+    ASSERT_EQ(tau.size(), 1u);
+    EXPECT_NEAR(tau[0], -1500.0, 0.01);
+}
+
+TEST(EstimateOffsets, single_voiced_note_in_segment_is_treated_as_too_few) {
+    // Only 1 voiced note → <2 → inherit neighbor.
+    std::vector<ss::Note> notes = {
+        {0.0, 300.0, 60}, {300.0, 600.0, 62}, {600.0, 900.0, 64},
+        {2000.0, 2300.0, 60}, {2300.0, 2600.0, 62},
+    };
+    std::vector<ss::Segment> segs = {{0, 3}, {3, 5}};
+    std::vector<ss::NoteScore> pass1 = {
+        pass1_note(   0.0,  300.0,  100.0),
+        pass1_note( 300.0,  600.0,  400.0),
+        pass1_note( 600.0,  900.0,  700.0),
+        pass1_note(2000.0, 2300.0, 2400.0),   // single voiced
+        pass1_note(2300.0, 2600.0,   -1.0),
+    };
+    auto tau = ss::estimate_segment_offsets(segs, notes, pass1);
+    ASSERT_EQ(tau.size(), 2u);
+    EXPECT_NEAR(tau[0], 100.0, 0.01);
+    EXPECT_NEAR(tau[1], 100.0, 0.01);   // inherited
+}
