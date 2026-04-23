@@ -94,6 +94,47 @@ TEST(Scorer, two_octaves_down_is_full_credit) {
     EXPECT_NEAR(per[0].pitch_score, 1.0f, 0.01f);
 }
 
+TEST(Scorer, major_sixth_hits_floor) {
+    // 9 semitones (major sixth) must not earn octave-fold credit.
+    // Under the old fmod fold this mapped to -3 → 0.4; under the tighter
+    // near-octave window it scores 0.1 (dist-to-octave = 3 ≥ 2.5).
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(69)));  // +9 st
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].pitch_score, 0.1f, 0.01f);
+}
+
+TEST(Scorer, octave_with_semitone_slip_is_full_credit) {
+    // 13 st (minor 9th) is "octave with a finger slip" — close enough to
+    // a whole octave that we still treat it as octave transposition.
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(73)));  // +13 st
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].pitch_score, 1.0f, 0.01f);
+}
+
+TEST(Scorer, minor_seventh_near_octave_partial_credit) {
+    // 10 st (minor 7th) is 2 st away from an octave. Under the new tighter
+    // window it scores ~0.40 (was ~0.70 under the old fmod fold).
+    // octave_err=2, t=(2-1)/1.5=0.667, score = 1 - 0.667*0.9 ≈ 0.40
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(70)));  // +10 st
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].pitch_score, 0.40f, 0.02f);
+}
+
 TEST(Scorer, way_off_pitch_per_note_hits_floor) {
     // Tritone above (6 st, exactly at the fold boundary) — truly different
     // pitch class even after octave folding, so floors at 0.1.
@@ -266,6 +307,18 @@ TEST(Scorer, stability_single_voiced_frame_is_neutral) {
     EXPECT_NEAR(per[0].stability_score, 1.0f, 0.01f);
 }
 
+TEST(Scorer, stability_single_voiced_wrong_pitch_is_floor) {
+    // One voiced frame with wrong pitch: the gate fires before the <2-sample
+    // neutral branch, so stability floors at 0.1, not 1.0. Regression guard
+    // against a future refactor that might swap the branch order.
+    std::vector<ss::Note> notes = {{0.0, 100.0, 60}};
+    std::vector<ss::PitchFrame> frames = {frame_at(50.0, midi_to_hz(66))};
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_EQ(per[0].voiced_frames, 1);
+    EXPECT_NEAR(per[0].stability_score, 0.1f, 0.01f);
+}
+
 TEST(Scorer, stability_zero_voiced_is_floor) {
     // Zero voiced frames → stability_score = 0.1 (not neutral — silence penalty)
     std::vector<ss::Note> notes = {{0.0, 100.0, 60}};
@@ -275,6 +328,37 @@ TEST(Scorer, stability_zero_voiced_is_floor) {
     ASSERT_EQ(per.size(), 1u);
     EXPECT_EQ(per[0].voiced_frames, 0);
     EXPECT_NEAR(per[0].stability_score, 0.1f, 0.01f);
+}
+
+TEST(Scorer, stability_gated_when_pitch_is_wrong) {
+    // Steady-but-off-pitch: user holds MIDI 66 (tritone, err=6) against ref 60.
+    // Pitch floors at 0.1. Stability must also floor at 0.1 — being stably
+    // wrong is not stability. Prevents monotone readers from cashing the
+    // 0.15 stability weight on every wrong note.
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(66)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].pitch_score, 0.1f, 0.01f);
+    EXPECT_NEAR(per[0].stability_score, 0.1f, 0.01f);
+}
+
+TEST(Scorer, stability_preserved_when_pitch_is_right) {
+    // Correct pitch + wobble: stability scored normally via stddev.
+    // Regression guard that the new gate doesn't clobber legitimate readings.
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        int odd = (int(t) / 10) & 1;
+        frames.push_back(frame_at(t, midi_to_hz(odd ? 61 : 59)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].pitch_score, 1.0f, 0.01f);
+    EXPECT_NEAR(per[0].stability_score, 0.475f, 0.05f);
 }
 
 TEST(Breakdown, pitch_is_duration_weighted) {
@@ -377,11 +461,100 @@ TEST(Breakdown, empty_is_zero) {
     EXPECT_EQ(b.completeness, 0.0f);
 }
 
-TEST(Aggregate, steady_ontime_wrong_note_gets_partial_credit) {
-    // A user confidently sings the wrong note (tritone, 6 st — different pitch
-    // class even after octave folding) steadily and on time.
-    //   pitch=0.1, rhythm=1, stability=1, completeness=1
-    //   combined = 0.40*0.1 + 0.25 + 0.15 + 0.20 = 0.64 → 10+89*0.64 ≈ 67
+TEST(Breakdown, monotone_user_against_varied_reference_shrinks_pitch) {
+    // 10 notes ascending C4..A4 — ref stddev ≈ 2.87. User sings every note
+    // at MIDI 60 (constant) — user stddev = 0. Pitch is multiplied by a
+    // factor that shrinks toward 0.3 as user variance → 0.
+    std::vector<ss::Note> notes;
+    for (int i = 0; i < 10; ++i) {
+        notes.push_back({double(i * 500), double((i + 1) * 500), 60 + i});
+    }
+    std::vector<ss::NoteScore> per(10);
+    for (int i = 0; i < 10; ++i) {
+        per[i] = {double(i*500), double((i+1)*500), 60+i, 60.0f,
+                  0.5f, 1.0f, 0.1f, 10};
+    }
+    auto b = ss::compute_breakdown(notes, per);
+    // Raw pitch avg = 0.5. Multiplier at user_sd=0 is 0.3 → b.pitch ≈ 0.15.
+    EXPECT_LE(b.pitch, 0.20f);
+    EXPECT_GE(b.pitch, 0.10f);
+}
+
+TEST(Breakdown, varied_user_against_varied_reference_no_penalty) {
+    // User's pitches track the ref — user stddev ≈ ref stddev ≈ 2.87.
+    // Multiplier = 1.0, pitch unchanged at its duration-weighted average.
+    std::vector<ss::Note> notes;
+    for (int i = 0; i < 10; ++i) {
+        notes.push_back({double(i * 500), double((i + 1) * 500), 60 + i});
+    }
+    std::vector<ss::NoteScore> per(10);
+    for (int i = 0; i < 10; ++i) {
+        per[i] = {double(i*500), double((i+1)*500), 60+i, float(60+i),
+                  1.0f, 1.0f, 1.0f, 10};
+    }
+    auto b = ss::compute_breakdown(notes, per);
+    EXPECT_NEAR(b.pitch, 1.0f, 0.01f);
+}
+
+TEST(Breakdown, monotone_user_against_drone_reference_no_penalty) {
+    // Reference is a drone (all MIDI 60). Monotone user must NOT be
+    // penalised — reference has no variance to track.
+    std::vector<ss::Note> notes;
+    for (int i = 0; i < 10; ++i) {
+        notes.push_back({double(i * 500), double((i + 1) * 500), 60});
+    }
+    std::vector<ss::NoteScore> per(10);
+    for (int i = 0; i < 10; ++i) {
+        per[i] = {double(i*500), double((i+1)*500), 60, 60.0f,
+                  1.0f, 1.0f, 1.0f, 10};
+    }
+    auto b = ss::compute_breakdown(notes, per);
+    EXPECT_NEAR(b.pitch, 1.0f, 0.01f);
+}
+
+TEST(Breakdown, variance_multiplier_ignored_when_too_few_voiced_notes) {
+    // Only 1 voiced note — not enough to judge variance. No penalty even
+    // if user stddev looks low.
+    std::vector<ss::Note> notes = {
+        {0.0,    500.0, 60},
+        {500.0, 1000.0, 72},
+    };
+    std::vector<ss::NoteScore> per(2);
+    per[0] = {  0.0,  500.0, 60, 60.0f, 1.0f, 1.0f, 1.0f, 10};
+    per[1] = {500.0, 1000.0, 72, 60.0f, 0.1f, 1.0f, 0.1f,  0}; // unvoiced
+    auto b = ss::compute_breakdown(notes, per);
+    // Only one voiced note → multiplier = 1.0 regardless of variance.
+    // Raw pitch avg = (500*1.0 + 500*0.1)/1000 = 0.55 → b.pitch ≈ 0.55.
+    EXPECT_NEAR(b.pitch, 0.55f, 0.02f);
+}
+
+TEST(Breakdown, variance_multiplier_exactly_two_voiced_notes_still_exempt) {
+    // Boundary regression guard: exactly 2 voiced notes is still "too few",
+    // so no penalty even when user's pitch is clearly monotonic relative to ref.
+    // If the threshold drifts from <3 to <=1, this test catches it.
+    std::vector<ss::Note> notes = {
+        {  0.0,  500.0, 60},
+        {500.0, 1000.0, 65},
+        {1000.0, 1500.0, 70},
+    };
+    std::vector<ss::NoteScore> per(3);
+    per[0] = {   0.0,  500.0, 60, 60.0f, 1.0f, 1.0f, 1.0f, 10};
+    per[1] = { 500.0, 1000.0, 65, 60.0f, 0.1f, 1.0f, 0.1f, 10};
+    per[2] = {1000.0, 1500.0, 70, 60.0f, 0.1f, 1.0f, 0.1f,  0}; // unvoiced
+    auto b = ss::compute_breakdown(notes, per);
+    // Only 2 voiced notes (voiced_frames >= 2) — user_meds.size() = 2 < 3.
+    // Multiplier = 1.0. Raw pitch avg = (500*1.0 + 500*0.1 + 500*0.1)/1500 = 0.40.
+    EXPECT_NEAR(b.pitch, 0.40f, 0.02f);
+}
+
+TEST(Aggregate, steady_ontime_wrong_note_drops_below_pass) {
+    // A user confidently sings a tritone (6 st — floor after pitch scoring)
+    // steadily and on time. Under the new stability gate, a wrong pitch
+    // takes stability down with it, so the combined score stays below the
+    // 60 pass threshold instead of sneaking in via rhythm + stability.
+    //   pitch=0.1, rhythm=1, stability=0.1 (gated), completeness=1
+    //   combined = 0.40*0.1 + 0.25*1.0 + 0.15*0.1 + 0.20*1.0
+    //            = 0.04 + 0.25 + 0.015 + 0.20 = 0.505 → 10+89*0.505 ≈ 55
     std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
     std::vector<ss::PitchFrame> frames;
     for (double t = 50.0; t < 1000.0; t += 10.0) {
@@ -389,8 +562,47 @@ TEST(Aggregate, steady_ontime_wrong_note_gets_partial_credit) {
     }
     auto per = ss::score_notes(notes, frames);
     int agg = ss::aggregate_score(notes, per);
-    EXPECT_GE(agg, 62);
-    EXPECT_LE(agg, 72);
+    EXPECT_GE(agg, 50);
+    EXPECT_LE(agg, 60);
+}
+
+TEST(Aggregate, monotone_reader_against_varied_melody_fails) {
+    // End-to-end regression for the bug that motivated the branch: a user
+    // reading lyrics at a single held pitch over a melody that actually varies
+    // used to score ~70 (passing) because stability rewarded their constant
+    // pitch and fmod-folded pitch errors gave coincidental credit. The three
+    // coordinated fixes (stability gate, narrow octave window, pitch-variance
+    // multiplier) should together drag the score well below the 60 pass
+    // threshold. Exercises score_notes → compute_breakdown → aggregate_score
+    // in a single integration.
+    const int kNotes = 8;
+    std::vector<ss::Note> notes;
+    for (int i = 0; i < kNotes; ++i) {
+        // Reference melody spans MIDI 60..67 (one note per 500ms), stddev ≈ 2.3
+        notes.push_back({double(i * 500), double((i + 1) * 500), 60 + i});
+    }
+    // User holds MIDI 63 (middle of the ref span) across the entire performance.
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < double(kNotes) * 500.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(63)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), size_t(kNotes));
+
+    // Per-note pitch_scores vary with |ref - 63|: notes 60..67 give errors
+    // -3..+4, all below the 6-st threshold, so the in-octave curve applies.
+    // Most notes score 0.1 or small partial credit; only ref=62,63,64 clear
+    // the 0.5 gate. For every gated note, stability is floored at 0.1.
+
+    // After compute_breakdown: user_sd = 0 (all detected = 63), ref_sd ≈ 2.3
+    // (above the 2.0 drone threshold) → variance multiplier = 0.3.
+    int agg = ss::aggregate_score(notes, per);
+
+    // Regression target: score should land below the 60 pass threshold, and
+    // should be noticeably lower than an ungated-stability + unfolded-octave
+    // pipeline would have produced (old code would score this ≈ 65-72).
+    EXPECT_LT(agg, 60) << "monotone reader must fail the 60 pass threshold";
+    EXPECT_GT(agg, 10) << "not full floor (rhythm + completeness give some credit)";
 }
 
 TEST(Aggregate, silent_user_still_floors) {
