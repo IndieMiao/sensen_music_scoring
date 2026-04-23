@@ -291,4 +291,20 @@ std::vector<Note> clip_notes_to_duration(
     return out;
 }
 
+std::vector<Segment> derive_phrase_segments(const std::vector<Note>& notes) {
+    std::vector<Segment> out;
+    if (notes.empty()) return out;
+
+    std::size_t seg_begin = 0;
+    for (std::size_t i = 1; i < notes.size(); ++i) {
+        double gap = notes[i].start_ms - notes[i - 1].end_ms;
+        if (gap >= kPhraseGapMs) {
+            out.push_back({seg_begin, i});
+            seg_begin = i;
+        }
+    }
+    out.push_back({seg_begin, notes.size()});
+    return out;
+}
+
 } // namespace ss

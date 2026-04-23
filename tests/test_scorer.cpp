@@ -702,3 +702,68 @@ TEST(ClipNotes, horizon_exactly_on_note_start_is_kept) {
     auto clipped = ss::clip_notes_to_duration(notes, 1000.0);
     ASSERT_EQ(clipped.size(), 2u);
 }
+
+TEST(PhraseSegments, empty_input_returns_empty) {
+    std::vector<ss::Note> notes;
+    auto segs = ss::derive_phrase_segments(notes);
+    EXPECT_TRUE(segs.empty());
+}
+
+TEST(PhraseSegments, single_note_is_one_segment) {
+    std::vector<ss::Note> notes = {{0.0, 500.0, 60}};
+    auto segs = ss::derive_phrase_segments(notes);
+    ASSERT_EQ(segs.size(), 1u);
+    EXPECT_EQ(segs[0].begin_idx, 0u);
+    EXPECT_EQ(segs[0].end_idx,   1u);
+}
+
+TEST(PhraseSegments, contiguous_notes_form_one_segment) {
+    // No gap between consecutive notes.
+    std::vector<ss::Note> notes = {
+        {   0.0,  500.0, 60},
+        { 500.0, 1000.0, 62},
+        {1000.0, 1500.0, 64},
+    };
+    auto segs = ss::derive_phrase_segments(notes);
+    ASSERT_EQ(segs.size(), 1u);
+    EXPECT_EQ(segs[0].begin_idx, 0u);
+    EXPECT_EQ(segs[0].end_idx,   3u);
+}
+
+TEST(PhraseSegments, gap_at_threshold_splits) {
+    // kPhraseGapMs is 400.0. Gap of exactly 400 → split.
+    std::vector<ss::Note> notes = {
+        {   0.0,  500.0, 60},
+        { 900.0, 1400.0, 62},   // gap = 400ms
+    };
+    auto segs = ss::derive_phrase_segments(notes);
+    ASSERT_EQ(segs.size(), 2u);
+    EXPECT_EQ(segs[0].begin_idx, 0u);
+    EXPECT_EQ(segs[0].end_idx,   1u);
+    EXPECT_EQ(segs[1].begin_idx, 1u);
+    EXPECT_EQ(segs[1].end_idx,   2u);
+}
+
+TEST(PhraseSegments, gap_just_under_threshold_does_not_split) {
+    std::vector<ss::Note> notes = {
+        {   0.0,  500.0, 60},
+        { 899.0, 1400.0, 62},   // gap = 399ms, below kPhraseGapMs=400
+    };
+    auto segs = ss::derive_phrase_segments(notes);
+    ASSERT_EQ(segs.size(), 1u);
+}
+
+TEST(PhraseSegments, multiple_gaps_produce_multiple_segments) {
+    std::vector<ss::Note> notes = {
+        {    0.0,   500.0, 60},
+        {  500.0,  1000.0, 62},   // no gap
+        { 2000.0,  2500.0, 64},   // gap of 1000ms → split
+        { 2500.0,  3000.0, 65},
+        { 4000.0,  4500.0, 67},   // gap of 1000ms → split
+    };
+    auto segs = ss::derive_phrase_segments(notes);
+    ASSERT_EQ(segs.size(), 3u);
+    EXPECT_EQ(segs[0].end_idx - segs[0].begin_idx, 2u);
+    EXPECT_EQ(segs[1].end_idx - segs[1].begin_idx, 2u);
+    EXPECT_EQ(segs[2].end_idx - segs[2].begin_idx, 1u);
+}

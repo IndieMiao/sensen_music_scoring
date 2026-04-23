@@ -8,6 +8,17 @@
 
 namespace ss {
 
+// Tuning constants for phrase-level time alignment (see
+// docs/superpowers/specs/2026-04-23-phrase-alignment-and-pcm-clipping-design.md).
+inline constexpr double kPhraseGapMs        = 400.0;   // min silence to split a phrase
+inline constexpr double kMaxSegmentOffsetMs = 1500.0;  // clamp on |tau_i|
+
+// A half-open index range [begin_idx, end_idx) into a vector<Note>.
+struct Segment {
+    std::size_t begin_idx = 0;
+    std::size_t end_idx   = 0;
+};
+
 // Per-note scoring result — kept around mostly for tests.
 struct NoteScore {
     double start_ms        = 0.0;
@@ -71,6 +82,13 @@ int aggregate_score(
 std::vector<Note> clip_notes_to_duration(
     const std::vector<Note>& notes,
     double                   end_ms_horizon);
+
+// Split `notes` into phrase segments at silence gaps >= kPhraseGapMs.
+// Returns a list of half-open index ranges covering all notes. An empty
+// input returns an empty result.
+// Precondition: `notes` must be sorted by start_ms ascending (the
+// invariant produced by the MIDI parser).
+std::vector<Segment> derive_phrase_segments(const std::vector<Note>& notes);
 
 } // namespace ss
 
