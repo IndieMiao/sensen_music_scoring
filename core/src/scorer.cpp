@@ -128,8 +128,13 @@ std::vector<NoteScore> score_notes(
             // Rhythm: onset offset vs note start.
             ns.rhythm_score = onset_offset_to_score(first_voiced_ms - note.start_ms);
 
-            // Stability: stddev of voiced MIDI values. Neutral (1.0) if <2 samples.
-            if (midi_vals.size() < 2) {
+            // Stability: only meaningful when the user is near the correct
+            // pitch. A monotone reader would otherwise earn 1.0 stability on
+            // every wrong note (constant f0 → stddev≈0). Gate at pitch_score
+            // >= 0.5, which corresponds to ~2.67 semitones of pitch error.
+            if (ns.pitch_score < 0.5f) {
+                ns.stability_score = 0.1f;
+            } else if (midi_vals.size() < 2) {
                 ns.stability_score = 1.0f;
             } else {
                 double mean = 0.0;

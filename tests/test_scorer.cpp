@@ -277,6 +277,37 @@ TEST(Scorer, stability_zero_voiced_is_floor) {
     EXPECT_NEAR(per[0].stability_score, 0.1f, 0.01f);
 }
 
+TEST(Scorer, stability_gated_when_pitch_is_wrong) {
+    // Steady-but-off-pitch: user holds MIDI 66 (tritone, err=6) against ref 60.
+    // Pitch floors at 0.1. Stability must also floor at 0.1 — being stably
+    // wrong is not stability. Prevents monotone readers from cashing the
+    // 0.15 stability weight on every wrong note.
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(66)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].pitch_score, 0.1f, 0.01f);
+    EXPECT_NEAR(per[0].stability_score, 0.1f, 0.01f);
+}
+
+TEST(Scorer, stability_preserved_when_pitch_is_right) {
+    // Correct pitch + wobble: stability scored normally via stddev.
+    // Regression guard that the new gate doesn't clobber legitimate readings.
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        int odd = (int(t) / 10) & 1;
+        frames.push_back(frame_at(t, midi_to_hz(odd ? 61 : 59)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].pitch_score, 1.0f, 0.01f);
+    EXPECT_NEAR(per[0].stability_score, 0.475f, 0.05f);
+}
+
 TEST(Breakdown, pitch_is_duration_weighted) {
     std::vector<ss::Note> notes = {
         {0.0,    100.0, 60},
@@ -377,11 +408,14 @@ TEST(Breakdown, empty_is_zero) {
     EXPECT_EQ(b.completeness, 0.0f);
 }
 
-TEST(Aggregate, steady_ontime_wrong_note_gets_partial_credit) {
-    // A user confidently sings the wrong note (tritone, 6 st — different pitch
-    // class even after octave folding) steadily and on time.
-    //   pitch=0.1, rhythm=1, stability=1, completeness=1
-    //   combined = 0.40*0.1 + 0.25 + 0.15 + 0.20 = 0.64 → 10+89*0.64 ≈ 67
+TEST(Aggregate, steady_ontime_wrong_note_drops_below_pass) {
+    // A user confidently sings a tritone (6 st — floor after pitch scoring)
+    // steadily and on time. Under the new stability gate, a wrong pitch
+    // takes stability down with it, so the combined score stays below the
+    // 60 pass threshold instead of sneaking in via rhythm + stability.
+    //   pitch=0.1, rhythm=1, stability=0.1 (gated), completeness=1
+    //   combined = 0.40*0.1 + 0.25*1.0 + 0.15*0.1 + 0.20*1.0
+    //            = 0.04 + 0.25 + 0.015 + 0.20 = 0.505 → 10+89*0.505 ≈ 55
     std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
     std::vector<ss::PitchFrame> frames;
     for (double t = 50.0; t < 1000.0; t += 10.0) {
@@ -389,8 +423,8 @@ TEST(Aggregate, steady_ontime_wrong_note_gets_partial_credit) {
     }
     auto per = ss::score_notes(notes, frames);
     int agg = ss::aggregate_score(notes, per);
-    EXPECT_GE(agg, 62);
-    EXPECT_LE(agg, 72);
+    EXPECT_GE(agg, 50);
+    EXPECT_LE(agg, 60);
 }
 
 TEST(Aggregate, silent_user_still_floors) {
