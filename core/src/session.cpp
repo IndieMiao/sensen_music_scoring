@@ -2,6 +2,7 @@
 
 #include "singscoring.h"
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <vector>
@@ -82,26 +83,59 @@ extern "C" int ss_finalize_score(ss_session* s) {
         }
     }
 
-    const auto& notes = s->song->notes;
+    // C1: clip ref_notes to the actual PCM duration so uncovered notes
+    // do not tank completeness or any weighted dimension.
+    double actual_end_ms = double(s->pcm.size()) * 1000.0 / double(s->sample_rate);
+    auto notes = ss::clip_notes_to_duration(s->song->notes, actual_end_ms);
+
+    if (notes.empty()) {
+        SS_LOGI("finalize: clipped to zero notes (actual_end_ms=%.0f, pcm=%zu)",
+                actual_end_ms, s->pcm.size());
+        return 10;
+    }
+
     double first_note_start = notes.front().start_ms;
     double first_note_end   = notes.front().end_ms;
     double last_note_start  = notes.back().start_ms;
     double last_note_end    = notes.back().end_ms;
 
-    auto per_note = ss::score_notes(notes, frames);
-    auto bd       = ss::compute_breakdown(notes, per_note);
-    int  score    = ss::aggregate_score(notes, per_note);
+    // A2: phrase-level offset alignment. Segment by MIDI rest gaps, run a
+    // tau=0 pre-pass to harvest first_voiced_ms per note, estimate a tau
+    // per segment from the median of onset deltas, and shift the reference
+    // windows before the scored pass.
+    auto segments = ss::derive_phrase_segments(notes);
+    auto pass1    = ss::score_notes(notes, frames);
+    auto tau      = ss::estimate_segment_offsets(segments, notes, pass1);
+    auto shifted  = ss::apply_segment_offsets(notes, segments, tau);
+
+    auto per_note = ss::score_notes(shifted, frames);
+    auto bd       = ss::compute_breakdown(shifted, per_note);
+    int  score    = ss::aggregate_score(shifted, per_note);
+
+    // Summarize tau for the log: min/median/max across segments.
+    double tau_min = 0.0, tau_max = 0.0, tau_med = 0.0;
+    if (!tau.empty()) {
+        auto sorted_tau = tau;
+        std::sort(sorted_tau.begin(), sorted_tau.end());
+        tau_min = sorted_tau.front();
+        tau_max = sorted_tau.back();
+        tau_med = sorted_tau[sorted_tau.size() / 2];
+    }
 
     SS_LOGI("finalize: pcm=%zu rate=%d durMs=%.0f peak=%.4f rms=%.4f "
             "frames=%zu voiced=%zu voicedSpan=[%.0f..%.0f] "
-            "notes=%zu firstNote=[%.0f..%.0f] lastNote=[%.0f..%.0f] "
+            "notes=%zu (clipped from %zu, endMs=%.0f) "
+            "firstNote=[%.0f..%.0f] lastNote=[%.0f..%.0f] "
+            "segments=%zu tau=[min=%.0f med=%.0f max=%.0f] "
             "pitch=%.3f rhythm=%.3f stability=%.3f completeness=%.3f combined=%.3f score=%d",
             s->pcm.size(), s->sample_rate,
             double(s->pcm.size()) * 1000.0 / s->sample_rate,
             peak, rms,
             frames.size(), n_voiced, first_voiced_ms, last_voiced_ms,
-            notes.size(), first_note_start, first_note_end,
+            notes.size(), s->song->notes.size(), actual_end_ms,
+            first_note_start, first_note_end,
             last_note_start, last_note_end,
+            segments.size(), tau_min, tau_med, tau_max,
             bd.pitch, bd.rhythm, bd.stability, bd.completeness, bd.combined,
             score);
 
