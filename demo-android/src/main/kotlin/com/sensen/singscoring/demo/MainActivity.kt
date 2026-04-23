@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private var autoStopRunnable: Runnable? = null
     private var mediaPlayer: android.media.MediaPlayer? = null
     private var previewAutoAdvance: Runnable? = null
+    private var scoringGeneration = 0
 
     private val root by lazy { FrameLayout(this) }
 
@@ -103,7 +104,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
-        col.addView(titleView("🎤  ${song.displayName}"))
+        col.addView(titleRowWithBack("🎤  ${song.displayName}"))
         col.addView(subtitleView("Get ready to sing the chorus."))
         col.addView(TextView(this).apply {
             text = if (secondsLeft > 0) secondsLeft.toString() else "Sing!"
@@ -122,7 +123,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
-        col.addView(titleView("🎤  ${song.displayName}"))
+        col.addView(titleRowWithBack("🎤  ${song.displayName}"))
 
         val view = LyricsScrollView(this).apply {
             setLines(lyrics)
@@ -148,7 +149,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
-        col.addView(titleView(song.displayName))
+        col.addView(titleRowWithBack(song.displayName))
         col.addView(subtitleView("Scoring…"))
         root.addView(col)
     }
@@ -219,7 +220,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
-        col.addView(titleView("🎵  ${song.displayName}"))
+        col.addView(titleRowWithBack("🎵  ${song.displayName}"))
         col.addView(subtitleView("Listen to the chorus…"))
 
         val view = LyricsScrollView(this).apply {
@@ -347,17 +348,40 @@ class MainActivity : AppCompatActivity() {
             "pcm samples=${flat.size} rate=$sampleRate durMs=$durMs peak=$peak rms=${"%.4f".format(rms)}"
         )
 
+        val gen = ++scoringGeneration
         thread(name = "ss-scoring", isDaemon = true) {
             val score = try {
                 SingScoringSession.score(zip, flat, sampleRate)
             } catch (_: Exception) { 10 }
-            main.post { renderResult(song, score) }
+            main.post { if (gen == scoringGeneration) renderResult(song, score) }
         }
     }
 
     private fun cancelAutoStop() {
         autoStopRunnable?.let { main.removeCallbacks(it) }
         autoStopRunnable = null
+    }
+
+    private fun returnToPicker() {
+        // Pending delayed work: countdown splash, preview auto-advance, auto-stop.
+        main.removeCallbacksAndMessages(null)
+        previewAutoAdvance = null
+        autoStopRunnable = null
+
+        mediaPlayer?.let { runCatching { it.stop() }; it.release() }
+        mediaPlayer = null
+
+        recorder?.let { runCatching { it.stop() } }
+        recorder = null
+        synchronized(pcm) {
+            pcm.clear()
+            pcmTotalSamples = 0
+        }
+
+        // Drop any in-flight native scoring result that posts back after we leave.
+        scoringGeneration++
+
+        renderPicker()
     }
 
     // --- helpers -----------------------------------------------------------
@@ -384,6 +408,26 @@ class MainActivity : AppCompatActivity() {
         this.text = text
         textSize = 26f
         layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+    }
+
+    private fun titleRowWithBack(text: String): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+        }
+        row.addView(Button(this).apply {
+            this.text = "← Songs"
+            setOnClickListener { returnToPicker() }
+            layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
+                .apply { marginEnd = 16 }
+        })
+        row.addView(TextView(this).apply {
+            this.text = text
+            textSize = 26f
+            layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
+        })
+        return row
     }
 
     private fun subtitleView(text: String) = TextView(this).apply {
