@@ -22,6 +22,8 @@ bump may break the seven functions declared in
   - Near-octave credit window narrowed from ±4 st to ±2.5 st. Intervals like a major sixth (9 st from the target) used to fold to -3 via `fmod` and earn 0.4 credit; they now floor at 0.1. Genuine octave transpositions (±1 st of a whole octave) still earn full credit.
   - New aggregate pitch-variance multiplier: when the user's per-note medians have stddev well below the reference's, aggregate pitch is multiplied by a factor shrinking toward 0.3. Drone-reference songs and single-voiced-note performances are exempt.
 - A monotone performer who follows the lyric scroll now scores ~45–55 (was ~70). Standard singing scores are approximately unchanged (~70–80).
+- **Phrase-level time alignment.** `ss_finalize_score` now estimates a per-phrase time offset (τ) from the median of per-note onset deltas in a τ=0 pre-pass, and shifts each phrase's reference note windows by its τ before the scored pass. Phrases are split at MIDI rest gaps ≥400ms; τ is clamped to ±1500ms. A user who starts singing 500ms late (or drifts at phrase boundaries) no longer has pitch and rhythm collapse together. No ABI change.
+- **PCM-duration clipping.** When the fed PCM is shorter than the MIDI chorus (e.g., the demo caps recording at 30s), `ref_notes` are now clipped to `n * 1000 / sample_rate` before scoring. Uncovered notes no longer floor completeness and the other weighted dimensions. No ABI change.
 
 ### Notes
 - Public C ABI unchanged. No version bump yet — tune more after real-user feedback.
