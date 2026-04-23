@@ -266,6 +266,18 @@ TEST(Scorer, stability_single_voiced_frame_is_neutral) {
     EXPECT_NEAR(per[0].stability_score, 1.0f, 0.01f);
 }
 
+TEST(Scorer, stability_single_voiced_wrong_pitch_is_floor) {
+    // One voiced frame with wrong pitch: the gate fires before the <2-sample
+    // neutral branch, so stability floors at 0.1, not 1.0. Regression guard
+    // against a future refactor that might swap the branch order.
+    std::vector<ss::Note> notes = {{0.0, 100.0, 60}};
+    std::vector<ss::PitchFrame> frames = {frame_at(50.0, midi_to_hz(66))};
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_EQ(per[0].voiced_frames, 1);
+    EXPECT_NEAR(per[0].stability_score, 0.1f, 0.01f);
+}
+
 TEST(Scorer, stability_zero_voiced_is_floor) {
     // Zero voiced frames → stability_score = 0.1 (not neutral — silence penalty)
     std::vector<ss::Note> notes = {{0.0, 100.0, 60}};

@@ -132,6 +132,8 @@ std::vector<NoteScore> score_notes(
             // pitch. A monotone reader would otherwise earn 1.0 stability on
             // every wrong note (constant f0 → stddev≈0). Gate at pitch_score
             // >= 0.5, which corresponds to ~2.67 semitones of pitch error.
+            // The <2-sample neutral (1.0) only applies when pitch is correct;
+            // a single-frame wrong-pitch note still floors at 0.1.
             if (ns.pitch_score < 0.5f) {
                 ns.stability_score = 0.1f;
             } else if (midi_vals.size() < 2) {
