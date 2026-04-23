@@ -276,4 +276,17 @@ int aggregate_score(
     return s;
 }
 
+std::vector<Note> clip_notes_to_duration(
+    const std::vector<Note>& notes,
+    double                   end_ms_horizon)
+{
+    std::vector<Note> out;
+    out.reserve(notes.size());
+    for (const auto& n : notes) {
+        if (n.start_ms > end_ms_horizon) break;
+        out.push_back(n);
+    }
+    return out;
+}
+
 } // namespace ss

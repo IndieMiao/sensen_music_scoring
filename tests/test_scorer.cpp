@@ -645,3 +645,49 @@ TEST(Scorer, note_score_first_voiced_ms_is_minus_one_when_silent) {
     ASSERT_EQ(per.size(), 1u);
     EXPECT_DOUBLE_EQ(per[0].first_voiced_ms, -1.0);
 }
+
+TEST(ClipNotes, keeps_all_notes_when_horizon_past_last) {
+    std::vector<ss::Note> notes = {
+        {0.0,   500.0, 60},
+        {500.0, 1000.0, 62},
+        {1000.0, 1500.0, 64},
+    };
+    auto clipped = ss::clip_notes_to_duration(notes, 5000.0);
+    ASSERT_EQ(clipped.size(), 3u);
+}
+
+TEST(ClipNotes, drops_notes_starting_past_horizon) {
+    std::vector<ss::Note> notes = {
+        {0.0,    500.0, 60},
+        {500.0, 1000.0, 62},
+        {1500.0, 2000.0, 64},   // starts past horizon
+    };
+    auto clipped = ss::clip_notes_to_duration(notes, 1200.0);
+    ASSERT_EQ(clipped.size(), 2u);
+    EXPECT_DOUBLE_EQ(clipped[1].end_ms, 1000.0);
+}
+
+TEST(ClipNotes, keeps_straddling_note_unchanged) {
+    // A note whose start is inside the horizon but end is outside is retained
+    // unchanged — its voiced_frames will naturally drop based on PCM coverage.
+    std::vector<ss::Note> notes = {
+        {0.0,    500.0, 60},
+        {800.0, 2000.0, 62},   // straddles 1200ms horizon
+    };
+    auto clipped = ss::clip_notes_to_duration(notes, 1200.0);
+    ASSERT_EQ(clipped.size(), 2u);
+    EXPECT_DOUBLE_EQ(clipped[1].start_ms, 800.0);
+    EXPECT_DOUBLE_EQ(clipped[1].end_ms,   2000.0);
+}
+
+TEST(ClipNotes, empty_when_horizon_before_first_note) {
+    std::vector<ss::Note> notes = {{500.0, 1000.0, 60}};
+    auto clipped = ss::clip_notes_to_duration(notes, 100.0);
+    EXPECT_TRUE(clipped.empty());
+}
+
+TEST(ClipNotes, empty_input_returns_empty) {
+    std::vector<ss::Note> notes;
+    auto clipped = ss::clip_notes_to_duration(notes, 1000.0);
+    EXPECT_TRUE(clipped.empty());
+}
