@@ -195,7 +195,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
-        col.addView(titleRowWithBack("🎤  ${song.name}"))
+        col.addView(titleRowWithBack("🎤  ${song.name}", countdownTotalMs = recordingDurationMs))
 
         val view = LyricsScrollView(this).apply {
             setLines(lyrics)
