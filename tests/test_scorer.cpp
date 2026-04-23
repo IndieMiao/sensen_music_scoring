@@ -528,6 +528,25 @@ TEST(Breakdown, variance_multiplier_ignored_when_too_few_voiced_notes) {
     EXPECT_NEAR(b.pitch, 0.55f, 0.02f);
 }
 
+TEST(Breakdown, variance_multiplier_exactly_two_voiced_notes_still_exempt) {
+    // Boundary regression guard: exactly 2 voiced notes is still "too few",
+    // so no penalty even when user's pitch is clearly monotonic relative to ref.
+    // If the threshold drifts from <3 to <=1, this test catches it.
+    std::vector<ss::Note> notes = {
+        {  0.0,  500.0, 60},
+        {500.0, 1000.0, 65},
+        {1000.0, 1500.0, 70},
+    };
+    std::vector<ss::NoteScore> per(3);
+    per[0] = {   0.0,  500.0, 60, 60.0f, 1.0f, 1.0f, 1.0f, 10};
+    per[1] = { 500.0, 1000.0, 65, 60.0f, 0.1f, 1.0f, 0.1f, 10};
+    per[2] = {1000.0, 1500.0, 70, 60.0f, 0.1f, 1.0f, 0.1f,  0}; // unvoiced
+    auto b = ss::compute_breakdown(notes, per);
+    // Only 2 voiced notes (voiced_frames >= 2) — user_meds.size() = 2 < 3.
+    // Multiplier = 1.0. Raw pitch avg = (500*1.0 + 500*0.1 + 500*0.1)/1500 = 0.40.
+    EXPECT_NEAR(b.pitch, 0.40f, 0.02f);
+}
+
 TEST(Aggregate, steady_ontime_wrong_note_drops_below_pass) {
     // A user confidently sings a tritone (6 st — floor after pitch scoring)
     // steadily and on time. Under the new stability gate, a wrong pitch

@@ -37,8 +37,9 @@ float stddev_to_score(float stddev_semitones);   // ≤0.3 → 1.0, ≥1.5 → 0
 // Shrinks toward 0.3 when the user's per-note medians have stddev well below
 // the reference's — i.e., the user is singing/talking near-monotonically
 // through a melody that genuinely varies. Returns 1.0 when there are fewer
-// than 3 voiced notes, when the reference itself is near-drone, or when the
-// user's variance matches the reference.
+// than 3 notes with voiced_frames >= 2 (not enough data), when the reference
+// itself is near-drone (ref stddev < 2 st), or when the user's variance
+// meets or exceeds 1.5 st.
 float compute_pitch_variance_multiplier(
     const std::vector<Note>&      ref_notes,
     const std::vector<NoteScore>& per_note);
