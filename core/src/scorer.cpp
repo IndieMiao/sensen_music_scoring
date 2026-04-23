@@ -9,11 +9,17 @@
 //       offset ≤ 100ms → 1.0, ≥ 400ms → 0.1, linear between. Silence → 0.1.
 //   - stability_score: stddev of voiced MIDI values, via stddev_to_score.
 //       ≤ 0.3 st → 1.0, ≥ 1.5 st → 0.1, linear between. Silence → 0.1; <2 voiced → 1.0 neutral.
+//       **Gated on pitch correctness:** if pitch_score < 0.5, stability is floored
+//       at 0.1. Being stably wrong is not stability — this prevents monotone
+//       readers from collecting stability credit on every wrong note.
 //   - voiced_frames:  count of voiced YIN frames inside the note window.
 //
 // compute_breakdown aggregates these into a song-level SongScoreBreakdown with
 // fixed weights (0.40 pitch + 0.25 rhythm + 0.15 stability + 0.20 completeness).
-// aggregate_score is then a thin wrapper mapping combined ∈ [0,1] → int ∈ [10, 99].
+// The aggregate pitch is then multiplied by compute_pitch_variance_multiplier,
+// which shrinks pitch toward 0.3 when the user's per-note medians barely vary
+// while the reference does — catching "read lyrics at a constant pitch" mode.
+// aggregate_score is a thin wrapper mapping combined ∈ [0,1] → int ∈ [10, 99].
 //
 // Rationale for the per-dimension breakpoints:
 //   - Octave transpositions (singing the right melody an octave up/down — common
@@ -28,10 +34,14 @@
 //     tracking, so we don't zero them out. The [10, 99] range has a 10 floor.
 //   - 100ms / 400ms onset thresholds roughly match human reaction variability
 //     and clear-lateness perception for phone-based karaoke.
-//   - 0.3 / 1.5 semitone stability thresholds separate vibrato from true wobble.
+//   - 0.3 / 1.5 semitone stability thresholds separate vibrato from true wobble —
+//     but only for notes where pitch_score >= 0.5. Below that the stability signal
+//     is meaningless (a monotone reader is stably wrong); we floor it at 0.1.
 //   - Aggregate weights de-emphasise pitch (0.40 vs the historical 0.50) and lift
 //     completeness (0.20 vs 0.15) so amateurs who attempt every note but drift on
-//     pitch still climb above the 60 pass threshold.
+//     pitch still climb above the 60 pass threshold — balanced against the
+//     stability gate + anti-monotone pitch-variance multiplier, which keep
+//     non-singing performances (constant-pitch readers) floored.
 
 #include "scorer.h"
 

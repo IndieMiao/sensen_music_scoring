@@ -11,9 +11,14 @@ bump may break the seven functions declared in
 ### Changed
 - **Scoring made friendlier to casual singers.** Three coordinated tweaks in `core/src/scorer.cpp`:
   - Pitch tolerance widened: full credit at ≤1 semitone (was 0.5), floor at ≥4 semitones (was 3).
-  - Pitch error is now octave-folded to ±6 semitones, so singing the right melody an octave up/down (e.g., a female voice covering a male-range song) earns full credit instead of flooring at 0.1.
+  - Pitch error scoring now has two credit regions: in-octave (standard curve) and near-octave (±1 st of a whole octave → full credit, tapering to floor at 2.5 st). Singing the right melody an octave up/down (e.g., a female voice covering a male-range song) still earns full credit, but intervals like a major sixth (9 st) no longer fold into partial credit.
   - Aggregate weights rebalanced to `0.40 pitch + 0.25 rhythm + 0.15 stability + 0.20 completeness` (was 0.50 / 0.20 / 0.15 / 0.15) so amateurs who attempt every note climb above the 60 pass threshold even with imperfect pitch.
-- A standard amateur singer now scores ~70–80 (was ~40–50); a precise singer ~85–95 (was ~50–60). Silent / talking-only floors are unchanged (~17 / ~25).
+- A standard amateur singer now scores ~70–80 (was ~40–50); a precise singer ~85–95 (was ~50–60).
+- **Scoring tightened against non-singing performances.** Three further tweaks close the gap that let a monotone lyric-reader score ~70:
+  - Stability is now gated on pitch correctness — a note whose pitch is wrong (pitch_score < 0.5) scores 0.1 for stability instead of computing stddev. Prevents monotone performers from earning the full 0.15 stability weight on every wrong note just by holding one pitch steadily.
+  - Near-octave credit window narrowed from ±4 st to ±2.5 st. Intervals like a major sixth (9 st from the target) used to fold to -3 via `fmod` and earn 0.4 credit; they now floor at 0.1. Genuine octave transpositions (±1 st of a whole octave) still earn full credit.
+  - New aggregate pitch-variance multiplier: when the user's per-note medians have stddev well below the reference's, aggregate pitch is multiplied by a factor shrinking toward 0.3. Drone-reference songs and single-voiced-note performances are exempt.
+- A monotone performer who follows the lyric scroll now scores ~45–55 (was ~70). Standard singing scores are approximately unchanged (~70–80).
 
 ### Notes
 - Public C ABI unchanged. No version bump yet — tune more after real-user feedback.
