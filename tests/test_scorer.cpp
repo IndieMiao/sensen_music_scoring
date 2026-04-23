@@ -94,6 +94,47 @@ TEST(Scorer, two_octaves_down_is_full_credit) {
     EXPECT_NEAR(per[0].pitch_score, 1.0f, 0.01f);
 }
 
+TEST(Scorer, major_sixth_hits_floor) {
+    // 9 semitones (major sixth) must not earn octave-fold credit.
+    // Under the old fmod fold this mapped to -3 → 0.4; under the tighter
+    // near-octave window it scores 0.1 (dist-to-octave = 3 ≥ 2.5).
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(69)));  // +9 st
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].pitch_score, 0.1f, 0.01f);
+}
+
+TEST(Scorer, octave_with_semitone_slip_is_full_credit) {
+    // 13 st (minor 9th) is "octave with a finger slip" — close enough to
+    // a whole octave that we still treat it as octave transposition.
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(73)));  // +13 st
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].pitch_score, 1.0f, 0.01f);
+}
+
+TEST(Scorer, minor_seventh_near_octave_partial_credit) {
+    // 10 st (minor 7th) is 2 st away from an octave. Under the new tighter
+    // window it scores ~0.40 (was ~0.70 under the old fmod fold).
+    // octave_err=2, t=(2-1)/1.5=0.667, score = 1 - 0.667*0.9 ≈ 0.40
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(70)));  // +10 st
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].pitch_score, 0.40f, 0.02f);
+}
+
 TEST(Scorer, way_off_pitch_per_note_hits_floor) {
     // Tritone above (6 st, exactly at the fold boundary) — truly different
     // pitch class even after octave folding, so floors at 0.1.
