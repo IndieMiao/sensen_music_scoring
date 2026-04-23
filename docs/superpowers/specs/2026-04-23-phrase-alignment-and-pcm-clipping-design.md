@@ -103,6 +103,12 @@ Completeness denominator in `compute_breakdown` already uses `ref_notes.size()`,
 
 Dropping notes changes the segmentation input for A2 too. C1 runs **before** `derive_phrase_segments`, so the segment partition reflects only the notes the user could actually have sung.
 
+### Interaction between C1 and A2
+
+A shifted note whose `shifted.end_ms` now exceeds `actual_end_ms` (because its segment's τᵢ is positive) is still scored — but only over the frames inside `[shifted.start_ms, actual_end_ms]`. Its `voiced_frames` count is therefore reduced, and pitch/stability/rhythm degrade gracefully rather than being handled via a special case.
+
+In practice this only affects the last 1–2 notes of the clipped set, because `|τᵢ| ≤ kMaxSegmentOffsetMs = 1500ms` and a note whose original `start_ms` is within ~1.5s of `actual_end_ms` is already near the tail. **This is the intended behavior, not a bug to fix.** It corresponds to the real-world situation: a user with a large phrase-level lag physically ran out of recording time before finishing the last phrase, and the SDK reflects that by giving partial credit on the tail.
+
 ### Struct changes
 
 `NoteScore` gains one field:
