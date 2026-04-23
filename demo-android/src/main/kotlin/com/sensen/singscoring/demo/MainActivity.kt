@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.Choreographer
 import android.view.Gravity
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -580,7 +581,7 @@ class MainActivity : AppCompatActivity() {
         layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
     }
 
-    private fun titleRowWithBack(text: String): LinearLayout {
+    private fun titleRowWithBack(text: String, countdownTotalMs: Long? = null): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -597,7 +598,44 @@ class MainActivity : AppCompatActivity() {
             textSize = 26f
             layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
         })
+        if (countdownTotalMs != null) {
+            row.addView(countdownTextView(countdownTotalMs))
+        }
         return row
+    }
+
+    // Self-driven "elapsed / total" readout clocked off recordingStartMs.
+    // The Choreographer callback re-posts itself while the view is attached and
+    // auto-unregisters in onDetachedFromWindow — view lifecycle drives cleanup.
+    private fun countdownTextView(totalMs: Long): TextView {
+        val tv = object : TextView(this) {
+            private val cb = object : Choreographer.FrameCallback {
+                override fun doFrame(frameTimeNanos: Long) {
+                    val elapsed = (SystemClock.elapsedRealtime() - recordingStartMs)
+                        .coerceIn(0L, totalMs)
+                    text = "${fmtMmSs(elapsed)} / ${fmtMmSs(totalMs)}"
+                    if (isAttachedToWindow) {
+                        Choreographer.getInstance().postFrameCallback(this)
+                    }
+                }
+            }
+
+            override fun onAttachedToWindow() {
+                super.onAttachedToWindow()
+                Choreographer.getInstance().postFrameCallback(cb)
+            }
+
+            override fun onDetachedFromWindow() {
+                super.onDetachedFromWindow()
+                Choreographer.getInstance().removeFrameCallback(cb)
+            }
+        }
+        tv.textSize = 18f
+        tv.layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
+            .apply { marginStart = 16 }
+        // Seed the initial value so the view isn't blank between attach and first frame.
+        tv.text = "${fmtMmSs(0L)} / ${fmtMmSs(totalMs)}"
+        return tv
     }
 
     private fun subtitleView(text: String) = TextView(this).apply {
@@ -610,5 +648,12 @@ class MainActivity : AppCompatActivity() {
     private fun toastLike(msg: String) {
         android.util.Log.w("SingScoringDemo", msg)
         android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show()
+    }
+
+    private fun fmtMmSs(ms: Long): String {
+        val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
+        val m = totalSeconds / 60L
+        val s = totalSeconds % 60L
+        return "%d:%02d".format(m, s)
     }
 }
