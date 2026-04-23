@@ -215,7 +215,7 @@ class MainActivity : AppCompatActivity() {
         drawResultBody(song)
     }
 
-    private fun drawResultBody(song: SongAssets.Song) {
+    private fun drawResultBody(song: SongCatalog.Song) {
         root.removeAllViews()
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
