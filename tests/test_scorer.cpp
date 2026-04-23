@@ -606,8 +606,9 @@ TEST(Aggregate, monotone_reader_against_varied_melody_fails) {
     // Scenario choice notes:
     //   - User pitch (MIDI 50) is outside the reference range AND is not near
     //     any octave of any reference note. Avoids octave-fold credit.
-    //   - Reference spans MIDI 53..60 (stddev ≈ 2.29, above the 2.0 drone
-    //     guard), so the variance multiplier engages and drags pitch down.
+    //   - Reference spans MIDI 53..60 (stddev ≈ 2.29, well above the 1.0
+    //     near-drone gate), so the variance multiplier engages and drags
+    //     pitch down to the ratio=0 floor of 0.1.
     //   - A user pitch centred inside the melody would hit several notes near
     //     full credit (0.5-gate opens, stability credits stack) and the score
     //     could drift above 60 — not a "monotone reader" profile.
