@@ -8,6 +8,9 @@ bump may break the seven functions declared in
 
 ## Unreleased
 
+### Added
+- Demo app: UI-level score remap with a raw/new toggle on the result screen. Engine output and the SDK ABI are unchanged; the remap lives entirely in `MainActivity`.
+
 ### Changed
 - **Scoring made friendlier to casual singers.** Three coordinated tweaks in `core/src/scorer.cpp`:
   - Pitch tolerance widened: full credit at ≤1 semitone (was 0.5), floor at ≥4 semitones (was 3).

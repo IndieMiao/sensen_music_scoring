@@ -22,6 +22,7 @@ import com.sensen.singscoring.SingScoringSession
 import java.io.File
 import java.util.zip.ZipInputStream
 import kotlin.concurrent.thread
+import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
 
@@ -46,6 +47,11 @@ class MainActivity : AppCompatActivity() {
     private var scoringGeneration = 0
     private var downloadGeneration = 0
     private var catalogGeneration = 0
+
+    // Result-screen toggle: true = show the UI-level remapped score, false = show raw.
+    // Resets to true on every new result / return to picker.
+    private var showRemapped: Boolean = true
+    private var lastRawScore: Int = -1
 
     private val root by lazy { FrameLayout(this) }
 
@@ -204,6 +210,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderResult(song: SongCatalog.Song, score: Int) {
         state = State.RESULT
+        lastRawScore = score
+        showRemapped = true   // Each new result starts on the remapped view.
+        drawResultBody(song)
+    }
+
+    private fun drawResultBody(song: SongAssets.Song) {
         root.removeAllViews()
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -212,9 +224,15 @@ class MainActivity : AppCompatActivity() {
         }
         col.addView(titleView(song.name))
 
-        val passed = score >= 60
+        val raw = lastRawScore
+        val displayed = if (showRemapped) remapScore(raw) else raw
+        // Pass/fail follows the displayed number: 60 is the pass line on both
+        // scales. Note: raw=59 remaps to 60, so toggling a 59 flips red↔green
+        // — acceptable per the spec.
+        val passed = displayed >= 60
+
         col.addView(TextView(this).apply {
-            text = score.toString()
+            text = displayed.toString()
             textSize = 96f
             setTextColor(if (passed) Color.parseColor("#2E7D32") else Color.parseColor("#C62828"))
             gravity = Gravity.CENTER
@@ -224,9 +242,19 @@ class MainActivity : AppCompatActivity() {
         col.addView(subtitleView(if (passed) "Passed" else "Needs work (pass ≥ 60)"))
 
         col.addView(Button(this).apply {
+            text = if (showRemapped) "Show raw score" else "Show new score"
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                .apply { topMargin = 32 }
+            setOnClickListener {
+                showRemapped = !showRemapped
+                drawResultBody(song)
+            }
+        })
+
+        col.addView(Button(this).apply {
             text = "Pick another song"
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-                .apply { topMargin = 64 }
+                .apply { topMargin = 32 }
             setOnClickListener { renderPicker() }
         })
         root.addView(col)
@@ -440,10 +468,29 @@ class MainActivity : AppCompatActivity() {
         downloadGeneration++
         catalogGeneration++
 
+        lastRawScore = -1
+        showRemapped = true
+
         renderPicker()
     }
 
     // --- helpers -----------------------------------------------------------
+
+    /**
+     * UI-level score remap. Pure function — no state, no side effects.
+     * Maps raw engine score (s ∈ [10, 99]) to a display score per the
+     * 2026-04-23 spec:
+     *   s < 15       → 1
+     *   15 ≤ s ≤ 59  → [1, 60]
+     *   60 ≤ s ≤ 70  → [60, 95]
+     *   71 ≤ s ≤ 99  → [96, 100]   (coerceAtMost(100) guards s > 99)
+     */
+    private fun remapScore(raw: Int): Int = when {
+        raw < 15 -> 1
+        raw <= 59 -> 1 + ((raw - 15) * 59.0 / 44.0).roundToInt()
+        raw <= 70 -> 60 + ((raw - 60) * 35.0 / 10.0).roundToInt()
+        else -> (96 + ((raw - 71) * 4.0 / 29.0).roundToInt()).coerceAtMost(100)
+    }
 
     private fun readLyrics(zipPath: String, songId: String): List<LrcLine> {
         val target = "${songId}_chorus.lrc"
