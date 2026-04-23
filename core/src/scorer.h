@@ -33,6 +33,16 @@ struct SongScoreBreakdown {
 float onset_offset_to_score(double offset_ms);   // |offset| in ms; ≤100 → 1.0, ≥400 → 0.1
 float stddev_to_score(float stddev_semitones);   // ≤0.3 → 1.0, ≥1.5 → 0.1
 
+// Returns a multiplier in [0.3, 1.0] applied to the aggregate pitch score.
+// Shrinks toward 0.3 when the user's per-note medians have stddev well below
+// the reference's — i.e., the user is singing/talking near-monotonically
+// through a melody that genuinely varies. Returns 1.0 when there are fewer
+// than 3 voiced notes, when the reference itself is near-drone, or when the
+// user's variance matches the reference.
+float compute_pitch_variance_multiplier(
+    const std::vector<Note>&      ref_notes,
+    const std::vector<NoteScore>& per_note);
+
 // Score a single performance against the reference notes.
 // - `frames` are the YIN output over the user's PCM (time-stamped at window center)
 // - Returns per-note scores aligned with `ref_notes` order

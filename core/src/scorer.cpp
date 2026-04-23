@@ -91,6 +91,46 @@ float stddev_to_score(float stddev_semitones) {
     return 1.0f - t * (1.0f - 0.1f);
 }
 
+float compute_pitch_variance_multiplier(
+    const std::vector<Note>&      ref_notes,
+    const std::vector<NoteScore>& per_note)
+{
+    if (per_note.size() != ref_notes.size()) return 1.0f;
+
+    std::vector<float> user_meds;
+    std::vector<float> ref_pitches;
+    user_meds.reserve(ref_notes.size());
+    ref_pitches.reserve(ref_notes.size());
+    for (size_t i = 0; i < ref_notes.size(); ++i) {
+        if (per_note[i].voiced_frames >= 2 && !std::isnan(per_note[i].detected_midi)) {
+            user_meds.push_back(per_note[i].detected_midi);
+            ref_pitches.push_back(float(ref_notes[i].pitch));
+        }
+    }
+    if (user_meds.size() < 3) return 1.0f;
+
+    auto stddev = [](const std::vector<float>& xs) -> double {
+        double m = 0.0;
+        for (float x : xs) m += x;
+        m /= double(xs.size());
+        double v = 0.0;
+        for (float x : xs) {
+            double d = double(x) - m;
+            v += d * d;
+        }
+        return std::sqrt(v / double(xs.size()));
+    };
+
+    double user_sd = stddev(user_meds);
+    double ref_sd  = stddev(ref_pitches);
+
+    if (ref_sd < 2.0) return 1.0f;   // drone reference — monotone is fine
+    if (user_sd >= 1.5) return 1.0f; // user varies enough — no penalty
+
+    double t = user_sd / 1.5;
+    return float(0.3 + 0.7 * t);
+}
+
 std::vector<NoteScore> score_notes(
     const std::vector<Note>&       ref_notes,
     const std::vector<PitchFrame>& frames)
@@ -198,6 +238,12 @@ SongScoreBreakdown compute_breakdown(
     b.rhythm       = float(rhythm_num / dur_den);
     b.stability    = float(stab_num   / dur_den);
     b.completeness = float(double(voiced_notes) / double(ref_notes.size()));
+
+    // Anti-monotone: shrink pitch if the user's per-note medians barely vary
+    // while the reference does. Protects against "read lyrics at constant
+    // pitch" earning coincidental pitch credit from octave-fold matches.
+    b.pitch       *= compute_pitch_variance_multiplier(ref_notes, per_note);
+
     b.combined     = 0.40f * b.pitch
                    + 0.25f * b.rhythm
                    + 0.15f * b.stability

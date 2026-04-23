@@ -461,6 +461,73 @@ TEST(Breakdown, empty_is_zero) {
     EXPECT_EQ(b.completeness, 0.0f);
 }
 
+TEST(Breakdown, monotone_user_against_varied_reference_shrinks_pitch) {
+    // 10 notes ascending C4..A4 — ref stddev ≈ 2.87. User sings every note
+    // at MIDI 60 (constant) — user stddev = 0. Pitch is multiplied by a
+    // factor that shrinks toward 0.3 as user variance → 0.
+    std::vector<ss::Note> notes;
+    for (int i = 0; i < 10; ++i) {
+        notes.push_back({double(i * 500), double((i + 1) * 500), 60 + i});
+    }
+    std::vector<ss::NoteScore> per(10);
+    for (int i = 0; i < 10; ++i) {
+        per[i] = {double(i*500), double((i+1)*500), 60+i, 60.0f,
+                  0.5f, 1.0f, 0.1f, 10};
+    }
+    auto b = ss::compute_breakdown(notes, per);
+    // Raw pitch avg = 0.5. Multiplier at user_sd=0 is 0.3 → b.pitch ≈ 0.15.
+    EXPECT_LE(b.pitch, 0.20f);
+    EXPECT_GE(b.pitch, 0.10f);
+}
+
+TEST(Breakdown, varied_user_against_varied_reference_no_penalty) {
+    // User's pitches track the ref — user stddev ≈ ref stddev ≈ 2.87.
+    // Multiplier = 1.0, pitch unchanged at its duration-weighted average.
+    std::vector<ss::Note> notes;
+    for (int i = 0; i < 10; ++i) {
+        notes.push_back({double(i * 500), double((i + 1) * 500), 60 + i});
+    }
+    std::vector<ss::NoteScore> per(10);
+    for (int i = 0; i < 10; ++i) {
+        per[i] = {double(i*500), double((i+1)*500), 60+i, float(60+i),
+                  1.0f, 1.0f, 1.0f, 10};
+    }
+    auto b = ss::compute_breakdown(notes, per);
+    EXPECT_NEAR(b.pitch, 1.0f, 0.01f);
+}
+
+TEST(Breakdown, monotone_user_against_drone_reference_no_penalty) {
+    // Reference is a drone (all MIDI 60). Monotone user must NOT be
+    // penalised — reference has no variance to track.
+    std::vector<ss::Note> notes;
+    for (int i = 0; i < 10; ++i) {
+        notes.push_back({double(i * 500), double((i + 1) * 500), 60});
+    }
+    std::vector<ss::NoteScore> per(10);
+    for (int i = 0; i < 10; ++i) {
+        per[i] = {double(i*500), double((i+1)*500), 60, 60.0f,
+                  1.0f, 1.0f, 1.0f, 10};
+    }
+    auto b = ss::compute_breakdown(notes, per);
+    EXPECT_NEAR(b.pitch, 1.0f, 0.01f);
+}
+
+TEST(Breakdown, variance_multiplier_ignored_when_too_few_voiced_notes) {
+    // Only 1 voiced note — not enough to judge variance. No penalty even
+    // if user stddev looks low.
+    std::vector<ss::Note> notes = {
+        {0.0,    500.0, 60},
+        {500.0, 1000.0, 72},
+    };
+    std::vector<ss::NoteScore> per(2);
+    per[0] = {  0.0,  500.0, 60, 60.0f, 1.0f, 1.0f, 1.0f, 10};
+    per[1] = {500.0, 1000.0, 72, 60.0f, 0.1f, 1.0f, 0.1f,  0}; // unvoiced
+    auto b = ss::compute_breakdown(notes, per);
+    // Only one voiced note → multiplier = 1.0 regardless of variance.
+    // Raw pitch avg = (500*1.0 + 500*0.1)/1000 = 0.55 → b.pitch ≈ 0.55.
+    EXPECT_NEAR(b.pitch, 0.55f, 0.02f);
+}
+
 TEST(Aggregate, steady_ontime_wrong_note_drops_below_pass) {
     // A user confidently sings a tritone (6 st — floor after pitch scoring)
     // steadily and on time. Under the new stability gate, a wrong pitch
