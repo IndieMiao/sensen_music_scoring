@@ -25,12 +25,12 @@ import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
 
-    private enum class State { PICKER, PREVIEW, COUNTDOWN, RECORDING, SCORING, RESULT }
+    private enum class State { PICKER, DOWNLOADING, PREVIEW, COUNTDOWN, RECORDING, SCORING, RESULT }
 
     private val sampleRate = 44100
     private var state = State.PICKER
     private var recorder: AudioRecorder? = null
-    private var pendingSong: SongAssets.Song? = null
+    private var pendingSong: SongCatalog.Song? = null
     private var stagedZipPath: String? = null
     private var lyrics: List<LrcLine> = emptyList()
 
@@ -44,13 +44,15 @@ class MainActivity : AppCompatActivity() {
     private var mediaPlayer: android.media.MediaPlayer? = null
     private var previewAutoAdvance: Runnable? = null
     private var scoringGeneration = 0
+    private var downloadGeneration = 0
+    private var catalogGeneration = 0
 
     private val root by lazy { FrameLayout(this) }
 
     private val requestMicPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) pendingSong?.let { startPreview(it) }
+        if (granted) pendingSong?.let { beginDownload(it) }
         else toastLike("Microphone permission denied")
     }
 
@@ -79,24 +81,69 @@ class MainActivity : AppCompatActivity() {
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
         col.addView(titleView("SingScoring demo"))
+        col.addView(subtitleView("SDK ${SingScoringSession.version} — loading songs…"))
+        root.addView(col)
+
+        val gen = ++catalogGeneration
+        SongCatalog.fetchFirstPage { result ->
+            if (gen != catalogGeneration || state != State.PICKER) return@fetchFirstPage
+            when (result) {
+                is SongCatalog.Result.Ok -> renderPickerReady(result.songs)
+                is SongCatalog.Result.Err -> renderPickerError(result.message)
+            }
+        }
+    }
+
+    private fun renderPickerReady(songs: List<SongCatalog.Song>) {
+        root.removeAllViews()
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        }
+        col.addView(titleView("SingScoring demo"))
         col.addView(subtitleView("SDK ${SingScoringSession.version} — pick a song"))
 
         val scroll = ScrollView(this)
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        SongAssets.list(this).forEach { song ->
-            list.addView(Button(this).apply {
-                text = "${song.displayName}  (${song.code})"
-                setOnClickListener { onSongPicked(song) }
-                layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-                    .apply { topMargin = 16 }
-            })
+        songs.forEach { song ->
+            list.addView(songButton(song))
         }
         scroll.addView(list)
         col.addView(scroll, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
         root.addView(col)
     }
 
-    private fun renderCountdown(song: SongAssets.Song, secondsLeft: Int) {
+    private fun renderPickerError(message: String) {
+        root.removeAllViews()
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        }
+        col.addView(titleView("SingScoring demo"))
+        col.addView(subtitleView("Couldn't load songs: $message"))
+        col.addView(Button(this).apply {
+            text = "Retry"
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                .apply { topMargin = 16 }
+            setOnClickListener { renderPicker() }
+        })
+        root.addView(col)
+    }
+
+    private fun renderDownloading(song: SongCatalog.Song) {
+        state = State.DOWNLOADING
+        root.removeAllViews()
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        }
+        col.addView(titleRowWithBack("🎵  ${song.name}"))
+        col.addView(subtitleView("Downloading song…"))
+        root.addView(col)
+    }
+
+    private fun renderCountdown(song: SongCatalog.Song, secondsLeft: Int) {
         state = State.COUNTDOWN
         root.removeAllViews()
         val col = LinearLayout(this).apply {
@@ -104,7 +151,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
-        col.addView(titleRowWithBack("🎤  ${song.displayName}"))
+        col.addView(titleRowWithBack("🎤  ${song.name}"))
         col.addView(subtitleView("Get ready to sing the chorus."))
         col.addView(TextView(this).apply {
             text = if (secondsLeft > 0) secondsLeft.toString() else "Sing!"
@@ -116,14 +163,14 @@ class MainActivity : AppCompatActivity() {
         root.addView(col)
     }
 
-    private fun renderRecording(song: SongAssets.Song) {
+    private fun renderRecording(song: SongCatalog.Song) {
         state = State.RECORDING
         root.removeAllViews()
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
-        col.addView(titleRowWithBack("🎤  ${song.displayName}"))
+        col.addView(titleRowWithBack("🎤  ${song.name}"))
 
         val view = LyricsScrollView(this).apply {
             setLines(lyrics)
@@ -141,7 +188,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(col)
     }
 
-    private fun renderScoring(song: SongAssets.Song) {
+    private fun renderScoring(song: SongCatalog.Song) {
         state = State.SCORING
         root.removeAllViews()
         val col = LinearLayout(this).apply {
@@ -149,12 +196,12 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
-        col.addView(titleRowWithBack(song.displayName))
+        col.addView(titleRowWithBack(song.name))
         col.addView(subtitleView("Scoring…"))
         root.addView(col)
     }
 
-    private fun renderResult(song: SongAssets.Song, score: Int) {
+    private fun renderResult(song: SongCatalog.Song, score: Int) {
         state = State.RESULT
         root.removeAllViews()
         val col = LinearLayout(this).apply {
@@ -162,7 +209,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
-        col.addView(titleView(song.displayName))
+        col.addView(titleView(song.name))
 
         val passed = score >= 60
         col.addView(TextView(this).apply {
@@ -184,15 +231,66 @@ class MainActivity : AppCompatActivity() {
         root.addView(col)
     }
 
-    private fun startPreview(song: SongAssets.Song) {
+    private fun renderPreview(song: SongCatalog.Song) {
+        state = State.PREVIEW
+        root.removeAllViews()
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        }
+        col.addView(titleRowWithBack("🎵  ${song.name}"))
+        col.addView(subtitleView("Listen to the chorus…"))
+
+        val view = LyricsScrollView(this).apply {
+            setLines(lyrics)
+            setClock { mediaPlayer?.currentPosition?.toLong() ?: 0L }
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f)
+                .apply { topMargin = 16; bottomMargin = 16 }
+        }
+        col.addView(view)
+
+        col.addView(Button(this).apply {
+            text = "Skip →"
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+            setOnClickListener { stopPreviewAndCountdown(song) }
+        })
+        root.addView(col)
+    }
+
+    // --- flow --------------------------------------------------------------
+
+    private fun onSongPicked(song: SongCatalog.Song) {
+        pendingSong = song
+        val granted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) beginDownload(song) else requestMicPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    private fun beginDownload(song: SongCatalog.Song) {
+        renderDownloading(song)
+        val gen = ++downloadGeneration
+        SongStaging.download(this, song) { result ->
+            if (gen != downloadGeneration || state != State.DOWNLOADING) return@download
+            when (result) {
+                is SongStaging.DownloadResult.Ok -> startPreview(song)
+                is SongStaging.DownloadResult.Err -> {
+                    toastLike("Download failed: ${result.message}")
+                    renderPicker()
+                }
+            }
+        }
+    }
+
+    private fun startPreview(song: SongCatalog.Song) {
         val staged = try {
-            SongAssets.stage(this, song)
+            SongStaging.stage(this, song)
         } catch (e: Exception) {
             toastLike("Failed to stage song: ${e.message}")
             return
         }
         stagedZipPath = staged.zipPath
-        lyrics = readLyrics(staged.zipPath, song.code)
+        lyrics = readLyrics(staged.zipPath, song.id)
 
         try {
             val mp = android.media.MediaPlayer().apply {
@@ -213,33 +311,7 @@ class MainActivity : AppCompatActivity() {
         main.postDelayed(previewAutoAdvance!!, 13_000L)
     }
 
-    private fun renderPreview(song: SongAssets.Song) {
-        state = State.PREVIEW
-        root.removeAllViews()
-        val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
-        }
-        col.addView(titleRowWithBack("🎵  ${song.displayName}"))
-        col.addView(subtitleView("Listen to the chorus…"))
-
-        val view = LyricsScrollView(this).apply {
-            setLines(lyrics)
-            setClock { mediaPlayer?.currentPosition?.toLong() ?: 0L }
-            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f)
-                .apply { topMargin = 16; bottomMargin = 16 }
-        }
-        col.addView(view)
-
-        col.addView(Button(this).apply {
-            text = "Skip →"
-            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-            setOnClickListener { stopPreviewAndCountdown(song) }
-        })
-        root.addView(col)
-    }
-
-    private fun stopPreviewAndCountdown(song: SongAssets.Song) {
+    private fun stopPreviewAndCountdown(song: SongCatalog.Song) {
         previewAutoAdvance?.let { main.removeCallbacks(it) }
         previewAutoAdvance = null
         mediaPlayer?.stop()
@@ -248,26 +320,16 @@ class MainActivity : AppCompatActivity() {
         startCountdown(song)
     }
 
-    // --- flow --------------------------------------------------------------
-
-    private fun onSongPicked(song: SongAssets.Song) {
-        pendingSong = song
-        val granted = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) startPreview(song) else requestMicPermission.launch(Manifest.permission.RECORD_AUDIO)
-    }
-
-    private fun startCountdown(song: SongAssets.Song) {
-        // Stage the zip and parse LRC up-front so the recording phase has nothing to wait on.
+    private fun startCountdown(song: SongCatalog.Song) {
+        // Stage (idempotent) + parse LRC up-front so the recording phase has nothing to wait on.
         val staged = try {
-            SongAssets.stage(this, song)
+            SongStaging.stage(this, song)
         } catch (e: Exception) {
             toastLike("Failed to stage song: ${e.message}")
             return
         }
         stagedZipPath = staged.zipPath
-        lyrics = readLyrics(staged.zipPath, song.code)
+        lyrics = readLyrics(staged.zipPath, song.id)
 
         // 3 → 2 → 1 → "Sing!" → start recording.
         renderCountdown(song, 3)
@@ -279,13 +341,12 @@ class MainActivity : AppCompatActivity() {
         }, 3000)
     }
 
-    private fun beginRecording(song: SongAssets.Song) {
+    private fun beginRecording(song: SongCatalog.Song) {
         pcm.clear()
         pcmTotalSamples = 0
         recordingStartMs = SystemClock.elapsedRealtime()
 
         val rec = AudioRecorder(sampleRate) { samples, count ->
-            // Copy into our own array so the recorder can reuse its buffer.
             val copy = FloatArray(count)
             System.arraycopy(samples, 0, copy, 0, count)
             synchronized(pcm) {
@@ -301,16 +362,11 @@ class MainActivity : AppCompatActivity() {
         }
         recorder = rec
 
-        // Move from "Sing!" splash to the actual scrolling-lyrics screen after a brief beat
-        // so the user sees the splash render. 250 ms is enough for the eye.
         main.postDelayed({ if (state == State.COUNTDOWN) renderRecording(song) }, 250)
 
-        // Auto-stop a short tail past the last MIDI note — that's the scoring
-        // horizon. LRC can end well before the melody (or after), so using it
-        // here would truncate capture and drag the score to the [10,99] floor
-        // via uncovered notes. Fall back to a loose 60 s cap if the SDK can't
-        // tell us (unparseable MIDI → the session would return 10 anyway).
-        val melodyEndMs = stagedZipPath?.let { runCatching { SingScoringSession.melodyEndMs(it) }.getOrDefault(-1L) } ?: -1L
+        val melodyEndMs = stagedZipPath?.let {
+            runCatching { SingScoringSession.melodyEndMs(it) }.getOrDefault(-1L)
+        } ?: -1L
         val tailMs = if (melodyEndMs > 0) melodyEndMs + 1500L else 60_000L
         autoStopRunnable = Runnable { if (state == State.RECORDING) finishAndScore() }
         main.postDelayed(autoStopRunnable!!, tailMs)
@@ -378,16 +434,17 @@ class MainActivity : AppCompatActivity() {
             pcmTotalSamples = 0
         }
 
-        // Drop any in-flight native scoring result that posts back after we leave.
+        // Drop any in-flight background result that posts back after we leave.
         scoringGeneration++
+        downloadGeneration++
 
         renderPicker()
     }
 
     // --- helpers -----------------------------------------------------------
 
-    private fun readLyrics(zipPath: String, songCode: String): List<LrcLine> {
-        val target = "${songCode}_chorus.lrc"
+    private fun readLyrics(zipPath: String, songId: String): List<LrcLine> {
+        val target = "${songId}_chorus.lrc"
         return try {
             ZipInputStream(File(zipPath).inputStream()).use { zis ->
                 while (true) {
@@ -403,6 +460,45 @@ class MainActivity : AppCompatActivity() {
     }
 
     // --- view helpers ------------------------------------------------------
+
+    private fun songButton(song: SongCatalog.Song): LinearLayout {
+        // Two-line row: name on top, "singer • rhythm" beneath. Implemented as a
+        // clickable vertical LinearLayout with two TextViews — Android's Button
+        // doesn't lay two lines out cleanly with a size hierarchy.
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            isClickable = true
+            isFocusable = true
+            setPadding(32, 24, 32, 24)
+            background = ContextCompat.getDrawable(context,
+                android.R.drawable.list_selector_background)
+            setOnClickListener { onSongPicked(song) }
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                .apply { topMargin = 16 }
+        }
+        row.addView(TextView(this).apply {
+            text = song.name
+            textSize = 18f
+            setTextColor(Color.BLACK)
+        })
+        val sub = buildString {
+            append(song.singer)
+            if (song.rhythm.isNotEmpty()) {
+                if (song.singer.isNotEmpty()) append("  •  ")
+                append(song.rhythm)
+            }
+        }
+        if (sub.isNotEmpty()) {
+            row.addView(TextView(this).apply {
+                text = sub
+                textSize = 13f
+                setTextColor(Color.DKGRAY)
+                layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                    .apply { topMargin = 4 }
+            })
+        }
+        return row
+    }
 
     private fun titleView(text: String) = TextView(this).apply {
         this.text = text
