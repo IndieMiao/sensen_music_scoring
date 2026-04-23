@@ -6,6 +6,18 @@ the C ABI may change between minor versions; from 1.0.0 onward, only a major
 bump may break the seven functions declared in
 [`core/include/singscoring.h`](core/include/singscoring.h).
 
+## Unreleased
+
+### Changed
+- **Scoring made friendlier to casual singers.** Three coordinated tweaks in `core/src/scorer.cpp`:
+  - Pitch tolerance widened: full credit at ≤1 semitone (was 0.5), floor at ≥4 semitones (was 3).
+  - Pitch error is now octave-folded to ±6 semitones, so singing the right melody an octave up/down (e.g., a female voice covering a male-range song) earns full credit instead of flooring at 0.1.
+  - Aggregate weights rebalanced to `0.40 pitch + 0.25 rhythm + 0.15 stability + 0.20 completeness` (was 0.50 / 0.20 / 0.15 / 0.15) so amateurs who attempt every note climb above the 60 pass threshold even with imperfect pitch.
+- A standard amateur singer now scores ~70–80 (was ~40–50); a precise singer ~85–95 (was ~50–60). Silent / talking-only floors are unchanged (~17 / ~25).
+
+### Notes
+- Public C ABI unchanged. No version bump yet — tune more after real-user feedback.
+
 ## 0.4.0 — 2026-04-22
 
 ### Added

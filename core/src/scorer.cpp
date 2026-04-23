@@ -1,8 +1,9 @@
 // Per-note scoring and duration-weighted aggregation across four dimensions.
 //
 // Per note, score_notes produces four signals:
-//   - pitch_score:  median detected MIDI vs ref_pitch, via semitone_error_to_score.
-//       err ≤ 0.5 → 1.0, err ≥ 3.0 → 0.1, linear between. Silence → 0.1.
+//   - pitch_score:  median detected MIDI vs ref_pitch, octave-folded to ±6 st,
+//       then via semitone_error_to_score.
+//       err ≤ 1.0 → 1.0, err ≥ 4.0 → 0.1, linear between. Silence → 0.1.
 //   - rhythm_score: |first_voiced_frame_time - note.start_ms|, via onset_offset_to_score.
 //       offset ≤ 100ms → 1.0, ≥ 400ms → 0.1, linear between. Silence → 0.1.
 //   - stability_score: stddev of voiced MIDI values, via stddev_to_score.
@@ -10,17 +11,24 @@
 //   - voiced_frames:  count of voiced YIN frames inside the note window.
 //
 // compute_breakdown aggregates these into a song-level SongScoreBreakdown with
-// fixed weights (0.50 pitch + 0.20 rhythm + 0.15 stability + 0.15 completeness).
+// fixed weights (0.40 pitch + 0.25 rhythm + 0.15 stability + 0.20 completeness).
 // aggregate_score is then a thin wrapper mapping combined ∈ [0,1] → int ∈ [10, 99].
 //
 // Rationale for the per-dimension breakpoints:
-//   - 0.5 semitone (~50 cents) is the lower bound of a perceived "wrong note"
-//     and comfortably absorbs vibrato. Untrained singers drift well inside it.
-//   - 3 semitones is a minor third — clearly wrong but still "close-ish" pitch
+//   - Pitch error is folded mod 12 (to ±6 semitones) before scoring, so singing
+//     the right melody an octave up/down — common when a male/female voice covers
+//     the opposite range — earns full credit instead of being floored at 0.1.
+//   - 1.0 semitone (~100 cents) is the perceived "in tune" tolerance for casual
+//     singers. Tighter (0.5 st) penalises normal vibrato and warble; looser
+//     (>1.5 st) rewards genuinely off-key performances.
+//   - 4 semitones is a major third — clearly wrong but still "close-ish" pitch
 //     tracking, so we don't zero them out. The [10, 99] range has a 10 floor.
 //   - 100ms / 400ms onset thresholds roughly match human reaction variability
 //     and clear-lateness perception for phone-based karaoke.
 //   - 0.3 / 1.5 semitone stability thresholds separate vibrato from true wobble.
+//   - Aggregate weights de-emphasise pitch (0.40 vs the historical 0.50) and lift
+//     completeness (0.20 vs 0.15) so amateurs who attempt every note but drift on
+//     pitch still climb above the 60 pass threshold.
 
 #include "scorer.h"
 
@@ -39,11 +47,20 @@ float hz_to_midi(float hz) {
 
 float semitone_error_to_score(float err) {
     err = std::fabs(err);
-    if (err <= 0.5f) return 1.0f;
-    if (err >= 3.0f) return 0.1f;
-    // Linear between (0.5, 1.0) and (3.0, 0.1).
-    float t = (err - 0.5f) / (3.0f - 0.5f);
+    if (err <= 1.0f) return 1.0f;
+    if (err >= 4.0f) return 0.1f;
+    // Linear between (1.0, 1.0) and (4.0, 0.1).
+    float t = (err - 1.0f) / (4.0f - 1.0f);
     return 1.0f - t * (1.0f - 0.1f);
+}
+
+// Fold a semitone error to (-6, 6] so that singing the right melody an octave
+// off (or any number of octaves off) is treated as in-tune.
+float fold_to_pitch_class(float err) {
+    err = std::fmod(err, 12.0f);
+    if (err >  6.0f) err -= 12.0f;
+    if (err <= -6.0f) err += 12.0f;
+    return err;
 }
 
 } // namespace
@@ -105,7 +122,8 @@ std::vector<NoteScore> score_notes(
             std::sort(sorted.begin(), sorted.end());
             float med = sorted[sorted.size() / 2];
             ns.detected_midi = med;
-            ns.pitch_score   = semitone_error_to_score(med - float(note.pitch));
+            ns.pitch_score   = semitone_error_to_score(
+                fold_to_pitch_class(med - float(note.pitch)));
 
             // Rhythm: onset offset vs note start.
             ns.rhythm_score = onset_offset_to_score(first_voiced_ms - note.start_ms);
@@ -164,10 +182,10 @@ SongScoreBreakdown compute_breakdown(
     b.rhythm       = float(rhythm_num / dur_den);
     b.stability    = float(stab_num   / dur_den);
     b.completeness = float(double(voiced_notes) / double(ref_notes.size()));
-    b.combined     = 0.50f * b.pitch
-                   + 0.20f * b.rhythm
+    b.combined     = 0.40f * b.pitch
+                   + 0.25f * b.rhythm
                    + 0.15f * b.stability
-                   + 0.15f * b.completeness;
+                   + 0.20f * b.completeness;
     return b;
 }
 

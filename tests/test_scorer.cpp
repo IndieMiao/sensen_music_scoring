@@ -46,7 +46,8 @@ TEST(Scorer, perfect_pitch_hits_max_score) {
     EXPECT_GE(agg, 95);
 }
 
-TEST(Scorer, one_semitone_off_gets_mid_score) {
+TEST(Scorer, one_semitone_off_is_full_credit) {
+    // 1 semitone (~100 cents) is the in-tune tolerance for casual singers.
     std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
     std::vector<ss::PitchFrame> frames;
     for (double t = 50.0; t < 1000.0; t += 10.0) {
@@ -54,21 +55,56 @@ TEST(Scorer, one_semitone_off_gets_mid_score) {
     }
     auto per = ss::score_notes(notes, frames);
     ASSERT_EQ(per.size(), 1u);
-    // err=1.0 → score = 1 - (0.5/2.5)*0.9 = 0.82
-    EXPECT_NEAR(per[0].pitch_score, 0.82f, 0.02f);
+    EXPECT_NEAR(per[0].pitch_score, 1.0f, 0.01f);
 }
 
-TEST(Scorer, way_off_pitch_per_note_hits_floor) {
+TEST(Scorer, two_semitones_off_gets_mid_score) {
     std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
     std::vector<ss::PitchFrame> frames;
     for (double t = 50.0; t < 1000.0; t += 10.0) {
-        frames.push_back(frame_at(t, midi_to_hz(75)));
+        frames.push_back(frame_at(t, midi_to_hz(62)));
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    // err=2.0 → score = 1 - (1.0/3.0)*0.9 ≈ 0.70
+    EXPECT_NEAR(per[0].pitch_score, 0.70f, 0.02f);
+}
+
+TEST(Scorer, octave_off_is_full_credit) {
+    // Singing the right melody one octave up (or down) is treated as in-tune.
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(72)));   // +12 st
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].pitch_score, 1.0f, 0.01f);
+}
+
+TEST(Scorer, two_octaves_down_is_full_credit) {
+    // Folding works for any number of octaves.
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(36)));   // -24 st
+    }
+    auto per = ss::score_notes(notes, frames);
+    ASSERT_EQ(per.size(), 1u);
+    EXPECT_NEAR(per[0].pitch_score, 1.0f, 0.01f);
+}
+
+TEST(Scorer, way_off_pitch_per_note_hits_floor) {
+    // Tritone above (6 st, exactly at the fold boundary) — truly different
+    // pitch class even after octave folding, so floors at 0.1.
+    std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
+    std::vector<ss::PitchFrame> frames;
+    for (double t = 50.0; t < 1000.0; t += 10.0) {
+        frames.push_back(frame_at(t, midi_to_hz(66)));
     }
     auto per = ss::score_notes(notes, frames);
     ASSERT_EQ(per.size(), 1u);
     EXPECT_NEAR(per[0].pitch_score, 0.1f, 0.01f);
-    // Aggregate expectation moved to Aggregate.steady_ontime_wrong_note_gets_partial_credit
-    // (a steady on-time wrong note now earns partial credit — no longer floors).
 }
 
 TEST(Scorer, unvoiced_user_gets_floor) {
@@ -94,9 +130,9 @@ TEST(Scorer, aggregate_is_duration_weighted) {
 
     int agg = ss::aggregate_score(notes, per);
     // pitch avg ≈ 0.918; rhythm/stability=1.0; completeness=0 (voiced_frames==0)
-    // combined = 0.5*0.918 + 0.2*1.0 + 0.15*1.0 + 0.15*0 ≈ 0.809 → ~82
-    EXPECT_GE(agg, 78);
-    EXPECT_LE(agg, 86);
+    // combined = 0.40*0.918 + 0.25*1.0 + 0.15*1.0 + 0.20*0 ≈ 0.767 → ~78
+    EXPECT_GE(agg, 74);
+    EXPECT_LE(agg, 82);
 }
 
 TEST(Scorer, empty_reference_returns_floor) {
@@ -327,10 +363,10 @@ TEST(Breakdown, combined_follows_weights) {
     auto b = ss::compute_breakdown(notes, per);
     EXPECT_NEAR(b.combined, 1.0f, 0.001f);
 
-    // pitch=0.1, others=1.0 → 0.5*0.1 + 0.2*1.0 + 0.15*1.0 + 0.15*1.0 = 0.55
+    // pitch=0.1, others=1.0 → 0.40*0.1 + 0.25*1.0 + 0.15*1.0 + 0.20*1.0 = 0.64
     per[0] = {0.0, 1000.0, 60, 75.0f, 0.1f, 1.0f, 1.0f, 50};
     b = ss::compute_breakdown(notes, per);
-    EXPECT_NEAR(b.combined, 0.55f, 0.01f);
+    EXPECT_NEAR(b.combined, 0.64f, 0.01f);
 }
 
 TEST(Breakdown, empty_is_zero) {
@@ -342,17 +378,19 @@ TEST(Breakdown, empty_is_zero) {
 }
 
 TEST(Aggregate, steady_ontime_wrong_note_gets_partial_credit) {
-    // A user confidently sings the wrong note steadily and on time.
-    // Old pitch-only scorer: ~10. New scorer: ~59.
+    // A user confidently sings the wrong note (tritone, 6 st — different pitch
+    // class even after octave folding) steadily and on time.
+    //   pitch=0.1, rhythm=1, stability=1, completeness=1
+    //   combined = 0.40*0.1 + 0.25 + 0.15 + 0.20 = 0.64 → 10+89*0.64 ≈ 67
     std::vector<ss::Note> notes = {{0.0, 1000.0, 60}};
     std::vector<ss::PitchFrame> frames;
     for (double t = 50.0; t < 1000.0; t += 10.0) {
-        frames.push_back(frame_at(t, midi_to_hz(75)));
+        frames.push_back(frame_at(t, midi_to_hz(66)));
     }
     auto per = ss::score_notes(notes, frames);
     int agg = ss::aggregate_score(notes, per);
-    EXPECT_GE(agg, 55);
-    EXPECT_LE(agg, 65);
+    EXPECT_GE(agg, 62);
+    EXPECT_LE(agg, 72);
 }
 
 TEST(Aggregate, silent_user_still_floors) {
@@ -362,6 +400,6 @@ TEST(Aggregate, silent_user_still_floors) {
     auto per = ss::score_notes(notes, frames);
     int agg = ss::aggregate_score(notes, per);
     // pitch=0.1, rhythm=0.1, stability=0.1, completeness=0
-    //   → 0.5*0.1 + 0.2*0.1 + 0.15*0.1 + 0.15*0 = 0.085 → 10+89*0.085 ≈ 18
+    //   → 0.40*0.1 + 0.25*0.1 + 0.15*0.1 + 0.20*0 = 0.080 → 10+89*0.080 ≈ 17
     EXPECT_LE(agg, 20);
 }
