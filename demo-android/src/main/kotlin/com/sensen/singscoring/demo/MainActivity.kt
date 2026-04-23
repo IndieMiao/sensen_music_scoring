@@ -53,6 +53,12 @@ class MainActivity : AppCompatActivity() {
     private var showRemapped: Boolean = true
     private var lastRawScore: Int = -1
 
+    // Preserve picker scroll position across navigation away and back.
+    private var pickerScrollView: ScrollView? = null
+    private var pickerScrollY: Int = 0
+    // Last song the user picked — highlighted on return to the list.
+    private var lastPickedSongId: String? = null
+
     private val root by lazy { FrameLayout(this) }
 
     private val requestMicPermission = registerForActivityResult(
@@ -81,6 +87,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderPicker() {
         state = State.PICKER
+        pickerScrollView = null  // loading screen has no scroll view yet
         root.removeAllViews()
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -91,8 +98,8 @@ class MainActivity : AppCompatActivity() {
         root.addView(col)
 
         val gen = ++catalogGeneration
-        SongCatalog.fetchFirstPage { result ->
-            if (gen != catalogGeneration || state != State.PICKER) return@fetchFirstPage
+        SongCatalog.fetchAll { result ->
+            if (gen != catalogGeneration || state != State.PICKER) return@fetchAll
             when (result) {
                 is SongCatalog.Result.Ok -> renderPickerReady(result.songs)
                 is SongCatalog.Result.Err -> renderPickerError(result.message)
@@ -117,6 +124,12 @@ class MainActivity : AppCompatActivity() {
         scroll.addView(list)
         col.addView(scroll, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
         root.addView(col)
+
+        pickerScrollView = scroll
+        val restoreY = pickerScrollY
+        // ScrollView clamps scrollY to content height; post after layout so
+        // children have measured, otherwise the restore silently no-ops.
+        scroll.post { scroll.scrollTo(0, restoreY) }
     }
 
     private fun renderPickerError(message: String) {
@@ -289,6 +302,8 @@ class MainActivity : AppCompatActivity() {
     // --- flow --------------------------------------------------------------
 
     private fun onSongPicked(song: SongCatalog.Song) {
+        pickerScrollY = pickerScrollView?.scrollY ?: pickerScrollY
+        lastPickedSongId = song.id
         pendingSong = song
         val granted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.RECORD_AUDIO
@@ -514,13 +529,18 @@ class MainActivity : AppCompatActivity() {
         // Two-line row: name on top, "singer • rhythm" beneath. Implemented as a
         // clickable vertical LinearLayout with two TextViews — Android's Button
         // doesn't lay two lines out cleanly with a size hierarchy.
+        val isLastPicked = song.id == lastPickedSongId
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             isClickable = true
             isFocusable = true
             setPadding(32, 24, 32, 24)
-            background = ContextCompat.getDrawable(context,
-                android.R.drawable.list_selector_background)
+            if (isLastPicked) {
+                setBackgroundColor(Color.parseColor("#FFF3CD")) // soft amber highlight
+            } else {
+                background = ContextCompat.getDrawable(context,
+                    android.R.drawable.list_selector_background)
+            }
             setOnClickListener { onSongPicked(song) }
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
                 .apply { topMargin = 16 }
