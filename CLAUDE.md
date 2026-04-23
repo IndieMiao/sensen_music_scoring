@@ -8,6 +8,10 @@ Cross-platform SDK for real-time singing evaluation. Android (AAR) + iOS (xcfram
 
 Status as of **0.3.0**: full pipeline shipping (MIDI parser + YIN pitch detector + per-note scorer + `[10, 99]` aggregate) on Android (live AAR + demo APK) and iOS (scaffolded Obj-C++ framework + xcframework build script). See [CHANGELOG.md](CHANGELOG.md) for per-release notes and [docs/ABI.md](docs/ABI.md) for the stability contract.
 
+
+# Tool Permissions
+- **Always Allowed:** "Bash(git *)","Bash(gh *)","Bash(docker *)","Bash(npm *)","Bash(python *)","Bash","Edit","Read","Write","Grep","Glob","Bash(adb *)","Bash(tail *)","Bash(python3 *)"
+
 ## Architecture
 
 The scoring logic is **intentionally one-way**:
@@ -93,3 +97,4 @@ If a test or build fails locally but CI passes (or vice versa), treat CI as auth
 - Version bumps: edit `core/include/singscoring_version.h` + `bindings/ios/Info.plist.in` + `bindings/ios/CMakeLists.txt` (the `MACOSX_FRAMEWORK_SHORT_VERSION_STRING` line) + a CHANGELOG entry. Nothing else reads the version at runtime.
 - Only LF-normalization warnings are expected on `git add` (the project uses LF in source, Windows checks out CRLF — harmless).
 - The NDK's own `android.toolchain.cmake` emits `cmake_minimum_required < 3.10` deprecation warnings on CMake 3.31. These are from Google's files, not ours — ignore until a newer NDK ships.
+
