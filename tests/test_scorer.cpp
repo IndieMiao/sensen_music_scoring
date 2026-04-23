@@ -463,8 +463,8 @@ TEST(Breakdown, empty_is_zero) {
 
 TEST(Breakdown, monotone_user_against_varied_reference_shrinks_pitch) {
     // 10 notes ascending C4..A4 — ref stddev ≈ 2.87. User sings every note
-    // at MIDI 60 (constant) — user stddev = 0. Pitch is multiplied by a
-    // factor that shrinks toward 0.3 as user variance → 0.
+    // at MIDI 60 (constant) — user stddev = 0. Ratio user_sd/ref_sd = 0,
+    // so the multiplier floors at 0.1.
     std::vector<ss::Note> notes;
     for (int i = 0; i < 10; ++i) {
         notes.push_back({double(i * 500), double((i + 1) * 500), 60 + i});
@@ -475,9 +475,9 @@ TEST(Breakdown, monotone_user_against_varied_reference_shrinks_pitch) {
                   0.5f, 1.0f, 0.1f, 10};
     }
     auto b = ss::compute_breakdown(notes, per);
-    // Raw pitch avg = 0.5. Multiplier at user_sd=0 is 0.3 → b.pitch ≈ 0.15.
-    EXPECT_LE(b.pitch, 0.20f);
-    EXPECT_GE(b.pitch, 0.10f);
+    // Raw pitch avg = 0.5. Multiplier at ratio=0 is 0.1 → b.pitch ≈ 0.05.
+    EXPECT_LE(b.pitch, 0.08f);
+    EXPECT_GE(b.pitch, 0.03f);
 }
 
 TEST(Breakdown, varied_user_against_varied_reference_no_penalty) {
@@ -510,6 +510,33 @@ TEST(Breakdown, monotone_user_against_drone_reference_no_penalty) {
     }
     auto b = ss::compute_breakdown(notes, per);
     EXPECT_NEAR(b.pitch, 1.0f, 0.01f);
+}
+
+TEST(Breakdown, monotone_user_against_flat_reference_now_penalised) {
+    // Regression guard for the flat-melody humming loophole.
+    // Ref cycles MIDI 58/60/62 over 10 notes — ref_sd ≈ 1.55 (well below
+    // the old 2.0 gate, well above the new 1.0 gate). User holds MIDI 60
+    // (user_sd = 0). Under the old absolute-threshold guard (ref_sd >= 2.0),
+    // this song bypassed the multiplier entirely; a steady hummer could
+    // collect near-full pitch credit. Under the ratio-based guard, ref_sd
+    // clears the 1.0 gate and ratio = 0 → multiplier floors at 0.1.
+    std::vector<ss::Note> notes;
+    const int kPitches[10] = {58, 60, 62, 60, 58, 62, 60, 58, 62, 60};
+    for (int i = 0; i < 10; ++i) {
+        notes.push_back({double(i * 500), double((i + 1) * 500), kPitches[i]});
+    }
+    std::vector<ss::NoteScore> per(10);
+    for (int i = 0; i < 10; ++i) {
+        // Uniform per-note pitch_score = 0.5 so the aggregate is driven by
+        // the multiplier, not by per-note variation.
+        per[i] = {double(i*500), double((i+1)*500), kPitches[i], 60.0f,
+                  0.5f, 1.0f, 0.1f, 10};
+    }
+    auto b = ss::compute_breakdown(notes, per);
+    // Raw pitch avg = 0.5. ref_sd ≈ 1.55 (>= 1.0 gate); user_sd = 0 →
+    // ratio = 0 → multiplier = 0.1 → b.pitch ≈ 0.05.
+    EXPECT_LE(b.pitch, 0.08f);
+    EXPECT_GE(b.pitch, 0.03f);
 }
 
 TEST(Breakdown, variance_multiplier_ignored_when_too_few_voiced_notes) {
@@ -597,16 +624,17 @@ TEST(Aggregate, monotone_reader_against_varied_melody_fails) {
     ASSERT_EQ(per.size(), size_t(kNotes));
 
     // Expected pipeline arithmetic (user=50, ref=53..60, errs 3..10):
-    //   per-note pitch_score: 0.4, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.4
-    //     (err=3 in-octave partial; err=4..9 floor; err=10 near-octave oct_err=2 → 0.4)
     //   All notes have pitch_score < 0.5 → stability gate floors each at 0.1.
-    //   user_sd = 0, ref_sd ≈ 2.29 → variance multiplier = 0.3.
-    //   b.pitch ≈ 0.163 * 0.3 ≈ 0.049
-    //   combined ≈ 0.40*0.049 + 0.25*1.0 + 0.15*0.1 + 0.20*1.0 ≈ 0.485
-    //   score ≈ 10 + 89 * 0.485 ≈ 53
+    //   user_sd = 0, ref_sd ≈ 2.29 → ratio = 0 → variance multiplier = 0.1.
+    //   b.pitch ≈ 0.163 * 0.1 ≈ 0.016
+    //   combined ≈ 0.40*0.016 + 0.25*1.0 + 0.15*0.1 + 0.20*1.0 ≈ 0.471
+    //   aggregate ≈ 10 + 89*0.471 ≈ 52
     //
-    // Old code (fmod fold + no stability gate + no multiplier) scored this
-    // scenario ≈ 72 — a 19-point drop demonstrates all three fixes are active.
+    // Before the scoring fixes (stability gate, narrow octave, variance
+    // multiplier) this error profile scored ~70. The pre-fix ceiling scenario
+    // ≈ 72 — a 20-point drop demonstrates all three fixes are active, with
+    // the ratio-based multiplier giving a slightly sharper shave than the
+    // original absolute-threshold version.
     int agg = ss::aggregate_score(notes, per);
     EXPECT_LT(agg, 60) << "monotone reader must fail the 60 pass threshold";
     EXPECT_GT(agg, 20) << "not full floor (rhythm + completeness give some credit)";
