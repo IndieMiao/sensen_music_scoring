@@ -24,6 +24,7 @@ bump may break the seven functions declared in
 - A monotone performer who follows the lyric scroll now scores ~45–55 (was ~70). Standard singing scores are approximately unchanged (~70–80).
 - **Phrase-level time alignment.** `ss_finalize_score` now estimates a per-phrase time offset (τ) from the median of per-note onset deltas in a τ=0 pre-pass, and shifts each phrase's reference note windows by its τ before the scored pass. Phrases are split at MIDI rest gaps ≥400ms; τ is clamped to ±1500ms. A user who starts singing 500ms late (or drifts at phrase boundaries) no longer has pitch and rhythm collapse together. No ABI change.
 - **PCM-duration clipping.** When the fed PCM is shorter than the MIDI chorus (e.g., the demo caps recording at 30s), `ref_notes` are now clipped to `n * 1000 / sample_rate` before scoring. Uncovered notes no longer floor completeness and the other weighted dimensions. No ABI change.
+- **Demo: recording duration capped at 30s with on-screen countdown.** `MainActivity` now caps `recordingDurationMs` at `min(melodyEndMs + 1500ms, 30_000L)` — short choruses still record end-to-end, long choruses stop at 30 s. The recording screen's title row gets an `m:ss / m:ss` countdown so the user can see the budget. `kMaxSingDurationMs` is a `private val` on `MainActivity` — tune in place. SDK behaviour unchanged.
 
 ### Notes
 - Public C ABI unchanged. No version bump yet — tune more after real-user feedback.
