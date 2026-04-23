@@ -5,12 +5,18 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <string>
+#include <vector>
 
 #include "fixtures.h"
 #include "mp3_decoder.h"
+#include "pitch_detector.h"
+#include "scorer.h"
 #include "singscoring.h"
 #include "song.h"
+#include "types.h"
 
 namespace {
 
