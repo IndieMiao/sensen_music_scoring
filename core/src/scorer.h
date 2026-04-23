@@ -100,6 +100,16 @@ std::vector<double> estimate_segment_offsets(
     const std::vector<Note>&      notes,
     const std::vector<NoteScore>& pass1);
 
+// Produce a copy of `notes` where each note in segment i has its
+// start_ms and end_ms shifted by tau[i]. Duration, pitch, and ordering
+// are preserved. Sizes of `segments` and `tau` must match. Notes
+// outside any segment are copied unchanged (should not occur given how
+// derive_phrase_segments partitions the full range).
+std::vector<Note> apply_segment_offsets(
+    const std::vector<Note>&    notes,
+    const std::vector<Segment>& segments,
+    const std::vector<double>&  tau);
+
 } // namespace ss
 
 #endif

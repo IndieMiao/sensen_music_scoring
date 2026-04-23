@@ -905,3 +905,46 @@ TEST(EstimateOffsets, single_voiced_note_in_segment_is_treated_as_too_few) {
     EXPECT_NEAR(tau[0], 100.0, 0.01);
     EXPECT_NEAR(tau[1], 100.0, 0.01);   // inherited
 }
+
+TEST(ApplyOffsets, shifts_each_segment_by_its_own_tau) {
+    std::vector<ss::Note> notes = {
+        {   0.0,  500.0, 60},
+        { 500.0, 1000.0, 62},
+        {2000.0, 2500.0, 64},
+        {2500.0, 3000.0, 65},
+    };
+    std::vector<ss::Segment> segs = {{0, 2}, {2, 4}};
+    std::vector<double> tau = { 100.0, -200.0 };
+
+    auto shifted = ss::apply_segment_offsets(notes, segs, tau);
+    ASSERT_EQ(shifted.size(), 4u);
+
+    EXPECT_DOUBLE_EQ(shifted[0].start_ms,  100.0);
+    EXPECT_DOUBLE_EQ(shifted[0].end_ms,    600.0);
+    EXPECT_DOUBLE_EQ(shifted[1].start_ms,  600.0);
+    EXPECT_DOUBLE_EQ(shifted[1].end_ms,   1100.0);
+
+    EXPECT_DOUBLE_EQ(shifted[2].start_ms, 1800.0);
+    EXPECT_DOUBLE_EQ(shifted[2].end_ms,   2300.0);
+    EXPECT_DOUBLE_EQ(shifted[3].start_ms, 2300.0);
+    EXPECT_DOUBLE_EQ(shifted[3].end_ms,   2800.0);
+}
+
+TEST(ApplyOffsets, preserves_duration_and_pitch) {
+    std::vector<ss::Note> notes = {{1000.0, 1500.0, 67}};
+    std::vector<ss::Segment> segs = {{0, 1}};
+    std::vector<double> tau = {-300.0};
+
+    auto shifted = ss::apply_segment_offsets(notes, segs, tau);
+    ASSERT_EQ(shifted.size(), 1u);
+    EXPECT_DOUBLE_EQ(shifted[0].duration_ms(), 500.0);
+    EXPECT_EQ(shifted[0].pitch, 67);
+}
+
+TEST(ApplyOffsets, empty_inputs_return_empty) {
+    std::vector<ss::Note> notes;
+    std::vector<ss::Segment> segs;
+    std::vector<double> tau;
+    auto shifted = ss::apply_segment_offsets(notes, segs, tau);
+    EXPECT_TRUE(shifted.empty());
+}

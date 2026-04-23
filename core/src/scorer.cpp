@@ -363,4 +363,22 @@ std::vector<double> estimate_segment_offsets(
     return tau;
 }
 
+std::vector<Note> apply_segment_offsets(
+    const std::vector<Note>&    notes,
+    const std::vector<Segment>& segments,
+    const std::vector<double>&  tau)
+{
+    std::vector<Note> out = notes;
+    if (segments.size() != tau.size()) return out;
+    for (std::size_t s = 0; s < segments.size(); ++s) {
+        const double t = tau[s];
+        for (std::size_t j = segments[s].begin_idx;
+             j < segments[s].end_idx && j < out.size(); ++j) {
+            out[j].start_ms += t;
+            out[j].end_ms   += t;
+        }
+    }
+    return out;
+}
+
 } // namespace ss
