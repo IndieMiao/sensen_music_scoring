@@ -59,6 +59,10 @@ class MainActivity : AppCompatActivity() {
     // Last song the user picked — highlighted on return to the list.
     private var lastPickedSongId: String? = null
 
+    // Max recording duration — tune here. Applied as min(chorus + 1500ms tail, this).
+    private val kMaxSingDurationMs: Long = 30_000L
+    private var recordingDurationMs: Long = kMaxSingDurationMs
+
     private val root by lazy { FrameLayout(this) }
 
     private val requestMicPermission = registerForActivityResult(
@@ -411,9 +415,10 @@ class MainActivity : AppCompatActivity() {
         val melodyEndMs = stagedZipPath?.let {
             runCatching { SingScoringSession.melodyEndMs(it) }.getOrDefault(-1L)
         } ?: -1L
-        val tailMs = if (melodyEndMs > 0) melodyEndMs + 1500L else 60_000L
+        val songTailMs = if (melodyEndMs > 0L) melodyEndMs + 1500L else kMaxSingDurationMs
+        recordingDurationMs = minOf(songTailMs, kMaxSingDurationMs)
         autoStopRunnable = Runnable { if (state == State.RECORDING) finishAndScore() }
-        main.postDelayed(autoStopRunnable!!, tailMs)
+        main.postDelayed(autoStopRunnable!!, recordingDurationMs)
     }
 
     private fun finishAndScore() {
