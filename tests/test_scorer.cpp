@@ -624,11 +624,13 @@ TEST(Aggregate, monotone_reader_against_varied_melody_fails) {
     ASSERT_EQ(per.size(), size_t(kNotes));
 
     // Expected pipeline arithmetic (user=50, ref=53..60, errs 3..10):
+    //   per-note pitch_score: 0.4, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.4
+    //     (err=3 in-octave partial; err=4..9 floor; err=10 near-octave oct_err=2 → 0.4)
     //   All notes have pitch_score < 0.5 → stability gate floors each at 0.1.
     //   user_sd = 0, ref_sd ≈ 2.29 → ratio = 0 → variance multiplier = 0.1.
-    //   b.pitch ≈ 0.163 * 0.1 ≈ 0.016
-    //   combined ≈ 0.40*0.016 + 0.25*1.0 + 0.15*0.1 + 0.20*1.0 ≈ 0.471
-    //   aggregate ≈ 10 + 89*0.471 ≈ 52
+    //   b.pitch ≈ 0.175 * 0.1 ≈ 0.018
+    //   combined ≈ 0.40*0.018 + 0.25*1.0 + 0.15*0.1 + 0.20*1.0 ≈ 0.472
+    //   aggregate ≈ 10 + 89*0.472 ≈ 52
     //
     // Before the scoring fixes (stability gate, narrow octave, variance
     // multiplier) this error profile scored ~70. The pre-fix ceiling scenario

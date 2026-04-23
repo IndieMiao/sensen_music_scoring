@@ -17,8 +17,10 @@
 // compute_breakdown aggregates these into a song-level SongScoreBreakdown with
 // fixed weights (0.40 pitch + 0.25 rhythm + 0.15 stability + 0.20 completeness).
 // The aggregate pitch is then multiplied by compute_pitch_variance_multiplier,
-// which shrinks pitch toward 0.3 when the user's per-note medians barely vary
-// while the reference does — catching "read lyrics at a constant pitch" mode.
+// which compares the user's per-note-median stddev to the reference's. A ratio
+// user_sd/ref_sd ≥ 1 leaves pitch alone; a hummer (ratio = 0) shrinks to 0.1.
+// Catches "read lyrics at a constant pitch" mode even on flat melodies where
+// an earlier absolute-threshold version of this guard was dormant.
 // aggregate_score is a thin wrapper mapping combined ∈ [0,1] → int ∈ [10, 99].
 //
 // Rationale for the per-dimension breakpoints:
@@ -40,8 +42,9 @@
 //   - Aggregate weights de-emphasise pitch (0.40 vs the historical 0.50) and lift
 //     completeness (0.20 vs 0.15) so amateurs who attempt every note but drift on
 //     pitch still climb above the 60 pass threshold — balanced against the
-//     stability gate + anti-monotone pitch-variance multiplier, which keep
-//     non-singing performances (constant-pitch readers) floored.
+//     stability gate + the ratio-based pitch-variance multiplier (user_sd/ref_sd,
+//     floor 0.1), which keep non-singing performances (constant-pitch readers)
+//     floored on both varied and flat melodies.
 
 #include "scorer.h"
 
@@ -134,11 +137,12 @@ float compute_pitch_variance_multiplier(
     double user_sd = stddev(user_meds);
     double ref_sd  = stddev(ref_pitches);
 
-    if (ref_sd < 2.0) return 1.0f;   // drone reference — monotone is fine
-    if (user_sd >= 1.5) return 1.0f; // user varies enough — no penalty
+    if (ref_sd < 1.0) return 1.0f;   // near-drone reference — monotone is fine
+    double ratio = user_sd / ref_sd;
+    if (ratio >= 1.0) return 1.0f;   // user varies at least as much as the ref
 
-    double t = user_sd / 1.5;
-    return float(0.3 + 0.7 * t);
+    // Linear shrink: ratio=0 → 0.1 (pure hummer), ratio=1 → 1.0 (full tracker).
+    return float(0.1 + 0.9 * ratio);
 }
 
 std::vector<NoteScore> score_notes(
@@ -250,9 +254,10 @@ SongScoreBreakdown compute_breakdown(
     b.stability    = float(stab_num   / dur_den);
     b.completeness = float(double(voiced_notes) / double(ref_notes.size()));
 
-    // Anti-monotone: shrink pitch if the user's per-note medians barely vary
-    // while the reference does. Protects against "read lyrics at constant
-    // pitch" earning coincidental pitch credit from octave-fold matches.
+    // Anti-monotone: shrink pitch if the user's per-note-median stddev is
+    // below the reference's. Ratio-based (user_sd/ref_sd) so the guard
+    // self-adapts to flat melodies — a steady hummer fails on both a
+    // ballad verse (ref_sd ≈ 1.4) and a full octave melody (ref_sd ≈ 3.0).
     b.pitch       *= compute_pitch_variance_multiplier(ref_notes, per_note);
 
     b.combined     = 0.40f * b.pitch
