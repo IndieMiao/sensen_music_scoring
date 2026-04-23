@@ -22,6 +22,7 @@ import com.sensen.singscoring.SingScoringSession
 import java.io.File
 import java.util.zip.ZipInputStream
 import kotlin.concurrent.thread
+import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
 
@@ -385,6 +386,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     // --- helpers -----------------------------------------------------------
+
+    /**
+     * UI-level score remap. Pure function — no state, no side effects.
+     * Maps raw engine score (s ∈ [10, 99]) to a display score per the
+     * 2026-04-23 spec:
+     *   s < 15       → 1
+     *   15 ≤ s ≤ 59  → [1, 60]
+     *   60 ≤ s ≤ 70  → [60, 95]
+     *   71 ≤ s ≤ 100 → [96, 100]
+     */
+    private fun remapScore(raw: Int): Int = when {
+        raw < 15 -> 1
+        raw <= 59 -> 1 + ((raw - 15) * 59.0 / 44.0).roundToInt()
+        raw <= 70 -> 60 + ((raw - 60) * 35.0 / 10.0).roundToInt()
+        else -> (96 + ((raw - 71) * 4.0 / 29.0).roundToInt()).coerceAtMost(100)
+    }
 
     private fun readLyrics(zipPath: String, songCode: String): List<LrcLine> {
         val target = "${songCode}_chorus.lrc"
