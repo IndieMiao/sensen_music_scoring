@@ -37,7 +37,7 @@ A single `Palette` object holds the dark-mode constants. The existing `Theme.Mat
 - **Fail red (score < 60 on result only):** `#F15E6C`.
 - **Corners:** 12dp on rows and cards; 24dp on the primary pill button.
 - **Type scale:** 26sp screen title, 22sp result song title, 18sp row title, 16sp body, 13sp row subtitle / header subtitle, 11sp footer.
-- **Status bar:** colored `#121212` with light icons via `WindowInsetsControllerCompat.isAppearanceLightStatusBars = false`.
+- **Status bar:** colored `#121212` via `window.statusBarColor`, with light icons via `WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false` (false = appearance is *not* light → icons render light-on-dark).
 
 Light-mode behavior: the activity now always renders dark regardless of the system setting. That's a one-way commitment for this demo and acceptable — the Spotify reference *is* dark-first.
 
@@ -67,7 +67,7 @@ When `filtered.isEmpty()` *and* the query is non-empty: show a muted centered `T
 
 One row = vertical `LinearLayout` in a `FrameLayout` for the selection indicator:
 
-- Row container: 12dp corner radius via `GradientDrawable` foreground, 12dp vertical padding, 20dp horizontal padding, ripple on press (`android.R.attr.selectableItemBackground`).
+- Row container: 12dp corner radius via a `GradientDrawable` background (solid `#181818`), 12dp vertical padding, 20dp horizontal padding. Foreground is `?attr/selectableItemBackground` so the Material ripple renders on top of the dark row fill.
 - Title: 18sp white.
 - Subtitle: 13sp `#B3B3B3`, formatted `singer  •  rhythm` (same joiner as today, unchanged logic).
 - **Last-picked highlight:** instead of the current amber fill, a 3dp vertical `#1DB954` bar on the left edge. The `Adapter` takes `highlightedId: String?`; setter compares against each bound row's id and toggles a `View.VISIBLE` / `INVISIBLE` on the bar view.
@@ -119,7 +119,7 @@ Unchanged from the existing `drawResultBody`: tapping the outlined button flips 
   - Rewrite `drawResultBody` for the ring-centered result layout.
   - Restyle `titleView` / `subtitleView` / `titleRowWithBack` for dark palette so preview / countdown / recording / scoring inherit the new look without structural changes.
   - Replace `pickerScrollView` + `pickerScrollY` fields with `pickerListState: Parcelable?`.
-  - Add `window.statusBarColor = 0xFF121212.toInt()` and set light-icon flag in `onCreate`.
+  - In `onCreate`: set `window.statusBarColor = 0xFF121212.toInt()` and `WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false`.
 
 **Unchanged:**
 
