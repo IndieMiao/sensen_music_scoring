@@ -213,7 +213,53 @@ final class RecordAndScore {
 }
 ```
 
-## 10. 版本管理
+## 10. 分数重映射（UI 层，可选）
+
+SDK 返回的是 `[10, 99]` 的"原始分"，及格线 60。为了在界面上给到更友好的
+观感（把及格带压扁、把高分段拉开），demo 在 **展示层** 对原始分再做一次
+分段线性重映射 —— **引擎、ABI、测试统统不受影响**，只是把最终渲染的
+数字换了个刻度。
+
+Android demo（`MainActivity.remapScore`，Kotlin）和 iOS demo
+（`AppState.swift` 中的 `remapScore`，Swift）公式完全一致：
+
+| 原始分 `s`          | 显示分     | 公式                                    |
+| ------------------- | ---------- | --------------------------------------- |
+| `s < 15`            | `1`        | 下限钳制（SDK 本身下限是 10）           |
+| `15 ≤ s ≤ 59`       | `[1, 60]`  | `1 + round((s - 15) * 59 / 44)`         |
+| `60 ≤ s ≤ 70`       | `[60, 95]` | `60 + round((s - 60) * 35 / 10)`        |
+| `71 ≤ s ≤ 99`       | `[96, 100]`| `min(100, 96 + round((s - 71) * 4 / 29))` |
+
+边界检查：`14 → 1`、`15 → 1`、`59 → 60`、`60 → 60`、`70 → 95`、
+`71 → 96`、`99 → 100`。两刻度在 60 分共享及格线。
+
+iOS demo 的实现（`demo-ios/SingScoringDemo/AppState.swift`）：
+
+```swift
+func remapScore(_ raw: Int) -> Int {
+    if raw < 15 { return 1 }
+    if raw <= 59 { return 1 + Int((Double(raw - 15) * 59.0 / 44.0).rounded()) }
+    if raw <= 70 { return 60 + Int((Double(raw - 60) * 35.0 / 10.0).rounded()) }
+    return min(100, 96 + Int((Double(raw - 71) * 4.0 / 29.0).rounded()))
+}
+```
+
+结果页（`ResultView`）默认展示重映射后的分数，提供一个 toggle 切回原始分
+方便对照 —— 对应 Android demo 结果页上的 "Show raw score / Show new score"
+按钮。
+
+**注意事项**：
+
+- 重映射是纯 UI 行为。**不要**把它塞进 SDK 或跨进程传输层 —— `ss_score`
+  返回的永远是 `[10, 99]` 的原始分，跨端协议、打点、服务端存储都应该
+  以原始分为准，显示层再做转换。
+- 及格判断建议仍然以 **原始分 ≥ 60** 为准。重映射后 59→60 会让边界用户
+  从"不及格"翻到"及格"；是否跟随显示分切换色彩/文案是产品决定，引擎
+  保持中立。
+- 公式需要和 Android demo 保持同步。改公式时同时更新 Kotlin 和 Swift
+  两份实现，并把边界值过一遍。
+
+## 11. 版本管理
 
 `SingScoringSession.sdkVersion` 返回 SDK 版本号。Obj-C / Swift API 在
 补丁版本间稳定；真正的"单一事实来源"是背后的 C ABI —— 参见
