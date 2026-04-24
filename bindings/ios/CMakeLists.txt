@@ -5,13 +5,22 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     return()
 endif()
 
+set(SINGSCORING_PUBLIC_HEADERS
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/SingScoring/SingScoring.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/SingScoring/SSCSession.h
+)
+
 add_library(SingScoring SHARED
     SSCSession.mm
+    ${SINGSCORING_PUBLIC_HEADERS}
+)
+
+set_source_files_properties(${SINGSCORING_PUBLIC_HEADERS} PROPERTIES
+    MACOSX_PACKAGE_LOCATION Headers
 )
 
 target_include_directories(SingScoring
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include/SingScoring
 )
 
 target_link_libraries(SingScoring PRIVATE singscoring_core)
@@ -27,6 +36,7 @@ set_target_properties(SingScoring PROPERTIES
     MACOSX_FRAMEWORK_INFO_PLIST     ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in
     PUBLIC_HEADER
         "${CMAKE_CURRENT_SOURCE_DIR}/include/SingScoring/SingScoring.h;${CMAKE_CURRENT_SOURCE_DIR}/include/SingScoring/SSCSession.h"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.sensen.singscoring
     XCODE_ATTRIBUTE_DEFINES_MODULE YES
     XCODE_ATTRIBUTE_CLANG_ENABLE_MODULES YES
     XCODE_ATTRIBUTE_ENABLE_BITCODE NO

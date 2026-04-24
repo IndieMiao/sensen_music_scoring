@@ -1,4 +1,4 @@
-#import "SSCSession.h"
+#import <SingScoring/SSCSession.h>
 
 #include "singscoring.h"
 
