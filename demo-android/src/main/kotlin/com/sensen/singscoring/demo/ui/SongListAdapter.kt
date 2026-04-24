@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.sensen.singscoring.demo.SongCatalog
 
@@ -107,7 +108,7 @@ class SongListAdapter(
                     context.theme.resolveAttribute(
                         android.R.attr.selectableItemBackground, tv, true
                     )
-                    foreground = context.resources.getDrawable(tv.resourceId, context.theme)
+                    foreground = ContextCompat.getDrawable(context, tv.resourceId)
                     setPadding(
                         20.dp(context), 12.dp(context),
                         20.dp(context), 12.dp(context),
