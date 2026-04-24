@@ -347,47 +347,108 @@ class MainActivity : AppCompatActivity() {
 
     private fun drawResultBody(song: SongCatalog.Song) {
         root.removeAllViews()
+
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        }
+
+        // Back as a text button, top-left.
+        outer.addView(TextView(this).apply {
+            text = "← Songs"
+            textSize = 16f
+            setTextColor(Palette.TEXT_SECONDARY)
+            isClickable = true
+            isFocusable = true
+            minimumHeight = 48.dp(this@MainActivity)
+            setPadding(0, 16, 24, 16)
+            setOnClickListener { returnToPicker() }
+            layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
+        })
+
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f)
         }
-        col.addView(titleView(song.name))
+
+        col.addView(TextView(this).apply {
+            text = song.name
+            textSize = 22f
+            setTextColor(Palette.TEXT_PRIMARY)
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                .apply { topMargin = 24 }
+        })
+        if (song.singer.isNotEmpty()) {
+            col.addView(TextView(this).apply {
+                text = song.singer
+                textSize = 13f
+                setTextColor(Palette.TEXT_SECONDARY)
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                    .apply { topMargin = 4 }
+            })
+        }
 
         val raw = lastRawScore
         val displayed = if (showRemapped) remapScore(raw) else raw
-        // Pass/fail follows the displayed number: 60 is the pass line on both
-        // scales. Note: raw=59 remaps to 60, so toggling a 59 flips red↔green
-        // — acceptable per the spec.
         val passed = displayed >= 60
+        val color = if (passed) Palette.ACCENT else Palette.FAIL
+
+        val ring = ScoreRingView(this).apply {
+            val size = 200.dp(this@MainActivity)
+            layoutParams = LinearLayout.LayoutParams(size, size)
+                .apply { topMargin = 48; bottomMargin = 16; gravity = Gravity.CENTER_HORIZONTAL }
+            setDisplayed(displayed, color)
+        }
+        col.addView(ring)
 
         col.addView(TextView(this).apply {
-            text = displayed.toString()
-            textSize = 96f
-            setTextColor(if (passed) Color.parseColor("#2E7D32") else Color.parseColor("#C62828"))
+            text = if (passed) "Passed" else "Needs work (pass ≥ 60)"
+            textSize = 16f
+            setTextColor(color)
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-                .apply { topMargin = 64; bottomMargin = 16 }
+                .apply { topMargin = 8; bottomMargin = 32 }
         })
-        col.addView(subtitleView(if (passed) "Passed" else "Needs work (pass ≥ 60)"))
 
+        // Outlined toggle.
+        val outlineBg = android.graphics.drawable.GradientDrawable().apply {
+            setColor(android.graphics.Color.TRANSPARENT)
+            setStroke(2.dp(this@MainActivity), Palette.OUTLINE)
+            cornerRadius = 24.dp(this@MainActivity).toFloat()
+        }
         col.addView(Button(this).apply {
             text = if (showRemapped) "Show raw score" else "Show new score"
+            setTextColor(Palette.TEXT_PRIMARY)
+            background = outlineBg
+            stateListAnimator = null
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-                .apply { topMargin = 32 }
+                .apply { topMargin = 8; bottomMargin = 12 }
             setOnClickListener {
                 showRemapped = !showRemapped
                 drawResultBody(song)
             }
         })
 
+        // Filled pill CTA.
+        val pillBg = android.graphics.drawable.GradientDrawable().apply {
+            setColor(Palette.ACCENT)
+            cornerRadius = 24.dp(this@MainActivity).toFloat()
+        }
         col.addView(Button(this).apply {
             text = "Pick another song"
+            setTextColor(android.graphics.Color.BLACK)
+            background = pillBg
+            stateListAnimator = null
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-                .apply { topMargin = 32 }
+                .apply { topMargin = 8 }
             setOnClickListener { renderPicker() }
         })
-        root.addView(col)
+
+        outer.addView(col)
+        root.addView(outer)
     }
 
     private fun renderPreview(song: SongCatalog.Song) {
@@ -662,6 +723,7 @@ class MainActivity : AppCompatActivity() {
             isClickable = true
             isFocusable = true
             setPadding(0, 16, 24, 16)
+            minimumHeight = 48.dp(this@MainActivity)
             setOnClickListener { returnToPicker() }
             layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
                 .apply { marginEnd = 16 }
