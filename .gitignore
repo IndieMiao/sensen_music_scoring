@@ -29,3 +29,10 @@ Thumbs.db
 
 # Third-party downloads (populated by CMake FetchContent)
 third_party/_deps/
+
+# iOS framework build outputs
+build-ios/
+
+# xcodegen generates these from project.yml — source of truth is project.yml
+demo-ios/SingScoringDemo.xcodeproj/
+demo-ios/SingScoringDemo/Info.plist
