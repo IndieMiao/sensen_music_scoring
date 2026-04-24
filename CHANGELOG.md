@@ -10,6 +10,7 @@ bump may break the seven functions declared in
 
 ### Added
 - Demo app: UI-level score remap with a raw/new toggle on the result screen. Engine output and the SDK ABI are unchanged; the remap lives entirely in `MainActivity`.
+- **Demo app: Spotify-inspired dark refresh.** Picker and result screens restyled to a dark palette (`#121212` background, `#181818` rows, `#1DB954` accent). Single search box filters the catalog by song name OR singer (case-insensitive, 150ms debounce). `Demo x · SDK y` footer shows both versions on the picker. Picker list migrated from an eager `ScrollView` of `LinearLayout` rows to a `RecyclerView` so the 2000+ song catalog scrolls without jank. Result screen centers the score inside a colored ring (green on pass, red on fail) with an outlined raw/new toggle and a filled green pill CTA. Preview / countdown / recording / scoring screens inherit the dark palette through shared view helpers. SDK unchanged.
 
 ### Changed
 - **Scoring made friendlier to casual singers.** Three coordinated tweaks in `core/src/scorer.cpp`:
