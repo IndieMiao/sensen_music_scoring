@@ -9,6 +9,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.Choreographer
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
@@ -19,7 +20,14 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.sensen.singscoring.SingScoringSession
+import com.sensen.singscoring.demo.ui.Palette
+import com.sensen.singscoring.demo.ui.ScoreRingView
+import com.sensen.singscoring.demo.ui.SongListAdapter
+import com.sensen.singscoring.demo.ui.dp
 import java.io.File
 import java.util.zip.ZipInputStream
 import kotlin.concurrent.thread
@@ -75,6 +83,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = Palette.BG
+        WindowInsetsControllerCompat(window, window.decorView)
+            .isAppearanceLightStatusBars = false
+        root.setBackgroundColor(Palette.BG)
         root.setPadding(48, 96, 48, 48)
         setContentView(root)
         renderPicker()
@@ -578,6 +590,7 @@ class MainActivity : AppCompatActivity() {
     private fun titleView(text: String) = TextView(this).apply {
         this.text = text
         textSize = 26f
+        setTextColor(Palette.TEXT_PRIMARY)
         layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
     }
 
@@ -587,15 +600,21 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
         }
-        row.addView(Button(this).apply {
+        row.addView(TextView(this).apply {
             this.text = "← Songs"
+            textSize = 16f
+            setTextColor(Palette.TEXT_SECONDARY)
+            isClickable = true
+            isFocusable = true
+            setPadding(0, 16, 24, 16)
             setOnClickListener { returnToPicker() }
             layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
                 .apply { marginEnd = 16 }
         })
         row.addView(TextView(this).apply {
             this.text = text
-            textSize = 26f
+            textSize = 22f
+            setTextColor(Palette.TEXT_PRIMARY)
             layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
         })
         if (countdownTotalMs != null) {
@@ -631,6 +650,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         tv.textSize = 18f
+        tv.setTextColor(Palette.TEXT_SECONDARY)
         tv.layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
             .apply { marginStart = 16 }
         // Seed the initial value so the view isn't blank between attach and first frame.
@@ -640,7 +660,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun subtitleView(text: String) = TextView(this).apply {
         this.text = text
-        textSize = 16f
+        textSize = 13f
+        setTextColor(Palette.TEXT_SECONDARY)
         layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
             .apply { topMargin = 8; bottomMargin = 16 }
     }
