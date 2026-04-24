@@ -15,7 +15,6 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -62,9 +61,10 @@ class MainActivity : AppCompatActivity() {
     private var showRemapped: Boolean = true
     private var lastRawScore: Int = -1
 
-    // Preserve picker scroll position across navigation away and back.
-    private var pickerScrollView: ScrollView? = null
-    private var pickerScrollY: Int = 0
+    // Preserve picker list position across navigation away and back.
+    private var pickerRecyclerView: RecyclerView? = null
+    private var pickerListState: android.os.Parcelable? = null
+    private var searchDebounce: Runnable? = null
     // Last song the user picked — highlighted on return to the list.
     private var lastPickedSongId: String? = null
 
@@ -104,14 +104,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderPicker() {
         state = State.PICKER
-        pickerScrollView = null  // loading screen has no scroll view yet
+        pickerRecyclerView = null
         root.removeAllViews()
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
-        col.addView(titleView("SingScoring demo"))
-        col.addView(subtitleView("SDK ${SingScoringSession.version} — loading songs…"))
+        col.addView(titleView("SingScoring"))
+        col.addView(subtitleView("Loading songs…"))
         root.addView(col)
 
         val gen = ++catalogGeneration
@@ -130,23 +130,115 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
-        col.addView(titleView("SingScoring demo"))
-        col.addView(subtitleView("SDK ${SingScoringSession.version} — pick a song"))
+        col.addView(titleView("SingScoring"))
+        col.addView(subtitleView("Pick a song"))
 
-        val scroll = ScrollView(this)
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        songs.forEach { song ->
-            list.addView(songButton(song))
+        // --- search bar --------------------------------------------------
+        val searchContainerBg = android.graphics.drawable.GradientDrawable().apply {
+            setColor(Palette.SURFACE_ELEVATED)
+            cornerRadius = 24.dp(this@MainActivity).toFloat()
         }
-        scroll.addView(list)
-        col.addView(scroll, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
-        root.addView(col)
+        val searchRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = searchContainerBg
+            setPadding(20.dp(this@MainActivity), 8.dp(this@MainActivity),
+                       20.dp(this@MainActivity), 8.dp(this@MainActivity))
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                .apply { topMargin = 8; bottomMargin = 16 }
+        }
+        searchRow.addView(TextView(this).apply {
+            text = "🔍"
+            textSize = 16f
+            setTextColor(Palette.TEXT_SECONDARY)
+            layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
+                .apply { marginEnd = 12.dp(this@MainActivity) }
+        })
+        val searchField = android.widget.EditText(this).apply {
+            hint = "Search songs or artists"
+            setHintTextColor(Palette.TEXT_TERTIARY)
+            setTextColor(Palette.TEXT_PRIMARY)
+            textSize = 16f
+            setSingleLine(true)
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setPadding(0, 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
+        }
+        searchRow.addView(searchField)
+        col.addView(searchRow)
 
-        pickerScrollView = scroll
-        val restoreY = pickerScrollY
-        // ScrollView clamps scrollY to content height; post after layout so
-        // children have measured, otherwise the restore silently no-ops.
-        scroll.post { scroll.scrollTo(0, restoreY) }
+        // --- list + empty state -----------------------------------------
+        val listContainer = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f)
+        }
+        val recycler = RecyclerView(this).apply {
+            layoutManager = LinearLayoutManager(this@MainActivity)
+            setHasFixedSize(true)
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        }
+        val emptyLabel = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Palette.TEXT_SECONDARY)
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                .apply { gravity = Gravity.CENTER }
+        }
+
+        val adapter = SongListAdapter(
+            onClick = { song ->
+                pickerListState = recycler.layoutManager?.onSaveInstanceState()
+                onSongPicked(song)
+            },
+            onFilterApplied = { visibleCount ->
+                val q = searchField.text?.toString()?.trim().orEmpty()
+                if (visibleCount == 0 && q.isNotEmpty()) {
+                    emptyLabel.text = "No songs match \"$q\""
+                    emptyLabel.visibility = View.VISIBLE
+                    recycler.visibility = View.INVISIBLE
+                } else {
+                    emptyLabel.visibility = View.GONE
+                    recycler.visibility = View.VISIBLE
+                }
+            },
+        )
+        adapter.setSongs(songs)
+        adapter.setHighlightedId(lastPickedSongId)
+        recycler.adapter = adapter
+        pickerListState?.let { recycler.layoutManager?.onRestoreInstanceState(it) }
+        pickerRecyclerView = recycler
+
+        listContainer.addView(recycler)
+        listContainer.addView(emptyLabel)
+        col.addView(listContainer)
+
+        // --- search wiring (debounced 150 ms) ---------------------------
+        searchField.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                searchDebounce?.let { main.removeCallbacks(it) }
+                val q = s?.toString().orEmpty()
+                val r = Runnable {
+                    // Adapter may have been replaced if we navigated away then back.
+                    if (pickerRecyclerView === recycler) adapter.setQuery(q)
+                }
+                searchDebounce = r
+                main.postDelayed(r, 150L)
+            }
+        })
+
+        // --- version footer ---------------------------------------------
+        col.addView(TextView(this).apply {
+            text = "Demo ${BuildConfig.VERSION_NAME} · SDK ${SingScoringSession.version}"
+            textSize = 11f
+            setTextColor(Palette.TEXT_TERTIARY)
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+                .apply { topMargin = 12 }
+        })
+
+        root.addView(col)
     }
 
     private fun renderPickerError(message: String) {
@@ -156,10 +248,18 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
-        col.addView(titleView("SingScoring demo"))
+        col.addView(titleView("SingScoring"))
         col.addView(subtitleView("Couldn't load songs: $message"))
+
+        val pillBg = android.graphics.drawable.GradientDrawable().apply {
+            setColor(Palette.ACCENT)
+            cornerRadius = 24.dp(this@MainActivity).toFloat()
+        }
         col.addView(Button(this).apply {
             text = "Retry"
+            setTextColor(android.graphics.Color.BLACK)
+            background = pillBg
+            stateListAnimator = null
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
                 .apply { topMargin = 16 }
             setOnClickListener { renderPicker() }
@@ -319,7 +419,6 @@ class MainActivity : AppCompatActivity() {
     // --- flow --------------------------------------------------------------
 
     private fun onSongPicked(song: SongCatalog.Song) {
-        pickerScrollY = pickerScrollView?.scrollY ?: pickerScrollY
         lastPickedSongId = song.id
         pendingSong = song
         val granted = ContextCompat.checkSelfPermission(
@@ -542,50 +641,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     // --- view helpers ------------------------------------------------------
-
-    private fun songButton(song: SongCatalog.Song): LinearLayout {
-        // Two-line row: name on top, "singer • rhythm" beneath. Implemented as a
-        // clickable vertical LinearLayout with two TextViews — Android's Button
-        // doesn't lay two lines out cleanly with a size hierarchy.
-        val isLastPicked = song.id == lastPickedSongId
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            isClickable = true
-            isFocusable = true
-            setPadding(32, 24, 32, 24)
-            if (isLastPicked) {
-                setBackgroundColor(Color.parseColor("#FFF3CD")) // soft amber highlight
-            } else {
-                background = ContextCompat.getDrawable(context,
-                    android.R.drawable.list_selector_background)
-            }
-            setOnClickListener { onSongPicked(song) }
-            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-                .apply { topMargin = 16 }
-        }
-        row.addView(TextView(this).apply {
-            text = song.name
-            textSize = 18f
-            setTextColor(Color.BLACK)
-        })
-        val sub = buildString {
-            append(song.singer)
-            if (song.rhythm.isNotEmpty()) {
-                if (song.singer.isNotEmpty()) append("  •  ")
-                append(song.rhythm)
-            }
-        }
-        if (sub.isNotEmpty()) {
-            row.addView(TextView(this).apply {
-                text = sub
-                textSize = 13f
-                setTextColor(Color.DKGRAY)
-                layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-                    .apply { topMargin = 4 }
-            })
-        }
-        return row
-    }
 
     private fun titleView(text: String) = TextView(this).apply {
         this.text = text
