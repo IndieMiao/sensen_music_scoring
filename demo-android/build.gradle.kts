@@ -20,6 +20,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // The :singscoring library ships only its release variant
+            // (optimized native binary). Match it from our debug build.
+            matchingFallbacks += listOf("release")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

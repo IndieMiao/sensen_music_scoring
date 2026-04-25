@@ -40,6 +40,16 @@ android {
         }
     }
 
+    // Ship one optimized native binary per ABI, period. Consumers (including
+    // the demo's debug APK) fall back to this variant — see matchingFallbacks
+    // in demo-android/build.gradle.kts. Native debug builds (-O0) are never
+    // useful for the SDK's hot path; the Kotlin/Java side stays debuggable.
+    androidComponents {
+        beforeVariants(selector().withBuildType("debug")) { variant ->
+            variant.enable = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
