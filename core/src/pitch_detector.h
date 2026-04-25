@@ -18,8 +18,12 @@ struct PitchFrame {
 struct PitchDetectorParams {
     int   frame_size     = 1764;   // 40 ms @ 44.1kHz
     int   hop            = 441;    // 10 ms @ 44.1kHz
-    float min_hz         = 80.0f;  // search range floor
-    float max_hz         = 800.0f; // search range ceiling (covers MIDI 40..84)
+    // Search range covers MIDI 43..80 — the observed reference vocal melodies
+    // (MIDI 48..75 per CLAUDE.md) plus headroom for octave-down singers. The
+    // scorer credits octave transpositions, so the floor must reach below the
+    // reference range or YIN won't detect a male covering a female chorus.
+    float min_hz         = 100.0f;
+    float max_hz         = 700.0f;
     float yin_threshold  = 0.15f;  // absolute threshold from the YIN paper
 };
 

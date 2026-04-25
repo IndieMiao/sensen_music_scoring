@@ -14,6 +14,7 @@ add_library(singscoring_core STATIC
     src/json_parser.cpp
     src/mp3_decoder.cpp
     src/pitch_detector.cpp
+    src/resampler.cpp
     src/scorer.cpp
     ${MINIZ_DIR}/miniz.c
 )
@@ -28,6 +29,15 @@ target_include_directories(singscoring_core
 target_compile_options(singscoring_core PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Wpedantic>
     $<$<CXX_COMPILER_ID:MSVC>:/W4>
+)
+
+# Release-only perf flags for the hot DSP paths (YIN, scorer).
+# -ffast-math is intentionally NOT used: the pitch detector encodes "unvoiced"
+# as quiet_NaN and the scorer tests it with std::isnan; -ffinite-math-only
+# would silently break that contract. -ffp-contract=fast still enables FMA.
+target_compile_options(singscoring_core PRIVATE
+    $<$<AND:$<CXX_COMPILER_ID:GNU,Clang,AppleClang>,$<NOT:$<CONFIG:Debug>>>:
+        -O3 -ffp-contract=fast -fno-math-errno -funroll-loops>
 )
 
 # miniz ships one source file; silence its warnings, don't force them on our code.

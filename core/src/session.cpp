@@ -9,6 +9,7 @@
 
 #include "mp3_decoder.h"
 #include "pitch_detector.h"
+#include "resampler.h"
 #include "scorer.h"
 #include "song.h"
 
@@ -70,8 +71,24 @@ extern "C" int ss_finalize_score(ss_session* s) {
     }
     double rms = s->pcm.empty() ? 0.0 : std::sqrt(sumsq / s->pcm.size());
 
-    auto frames = ss::detect_pitches(
-        s->pcm.data(), int(s->pcm.size()), s->sample_rate);
+    // Decimate to halve the YIN cost when sample_rate is high (typical 44.1k
+    // or 48k mic input). The new Nyquist (>=12 kHz) sits well above any vocal
+    // harmonic YIN cares about; the FIR's small stopband leakage is harmless
+    // because the YIN search range (≤700 Hz) is far below the alias band.
+    // The resampler only runs when rate > 24 kHz so 22.05k/24k are passed
+    // through unchanged.
+    const float* yin_samples = s->pcm.data();
+    int          yin_count   = int(s->pcm.size());
+    int          yin_rate    = s->sample_rate;
+    std::vector<float> decimated;
+    if (s->sample_rate > 24000) {
+        decimated  = ss::decimate_by_2(s->pcm.data(), int(s->pcm.size()));
+        yin_samples = decimated.data();
+        yin_count   = int(decimated.size());
+        yin_rate    = s->sample_rate / 2;
+    }
+
+    auto frames = ss::detect_pitches(yin_samples, yin_count, yin_rate);
 
     size_t n_voiced = 0;
     double first_voiced_ms = -1.0, last_voiced_ms = -1.0;

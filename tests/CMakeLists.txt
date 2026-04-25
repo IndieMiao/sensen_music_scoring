@@ -19,6 +19,7 @@ add_executable(singscoring_tests
     test_song_integration.cpp
     test_mp3_decoder.cpp
     test_pitch_detector.cpp
+    test_resampler.cpp
     test_scorer.cpp
     test_session_scoring.cpp
 )
